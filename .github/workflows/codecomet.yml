@@ -1,0 +1,31 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [macos-11, macos-12]
+    runs-on: ${{ matrix.os }}
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      - name: Run CodeComet plan
+        run: |
+          # Unfortunately, right now we conflict https://github.com/codecomet-io/isovaline/issues/22
+          brew unlink lima
+
+          # Installation proper
+          brew tap codecomet-io/tap https://github.com/codecomet-io/installers.git
+          brew install --HEAD codecomet
+          codecomet-machine install
+          ret=
+          
+          export CODECOMET_DEBUG=true
+          while [ "$ret" != "Running" ]; do
+            sleep 5
+            echo "Testing VM..."
+            ret="$(codecomet-machine status | jq -rc .Machine.status || true)"
+            echo "Status: $ret"
+          done

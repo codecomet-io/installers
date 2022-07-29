@@ -1,0 +1,70 @@
+images:
+  - location: "https://cloud.debian.org/images/cloud/bullseye/20220911-1135/debian-11-generic-amd64-20220911-1135.qcow2"
+    arch: "x86_64"
+    digest: "sha512:c4416631d709228ff5393de737c195358ec9c4882b4df9c4d579baf7b3b064bfaceed9ea9cbda3263f785c68ee410d763ccd3ea8f56c59df4453113a700bd7e9"
+  - location: "https://cloud.debian.org/images/cloud/bullseye/20220911-1135/debian-11-generic-arm64-20220911-1135.qcow2"
+    arch: "aarch64"
+    digest: "sha512:969e2de2559f5c1d489c6c4f089f37e261e387ab4d2da466f571696ac5736290704840b77181731e0b7de5031f9d4f827c8bd650e04d2b1f152583b4fd7ab3c7"
+
+containerd:
+  system: true
+  user: false
+
+portForwards:
+  - guestSocket: "/run/buildkit/buildkitd.sock"
+    hostSocket: "{{.Dir}}/sock/buildkitd.sock"
+  - guestPort: 443
+    hostIP: "0.0.0.0"
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      export DEBIAN_FRONTEND=noninteractive
+
+      # Install git
+      apt-get update
+      apt-get install -y git
+
+      ## Create the patch
+      cat <<-EOF >/patch
+      --- /etc/systemd/system/multi-user.target.wants/buildkit.service_original	2022-09-02 03:59:06.444960735 +0000
+      +++ /etc/systemd/system/multi-user.target.wants/buildkit.service	2022-09-02 04:03:37.697167474 +0000
+      @@ -20,6 +20,7 @@
+       [Service]
+       ExecStartPre=-/sbin/modprobe overlay
+       ExecStart=/usr/local/bin/buildkitd
+      +ExecStartPost=/perm_fix
+      
+       Type=notify
+       Delegate=yes
+      EOF
+
+      # And patch in place
+      patch /usr/local/lib/systemd/system/buildkit.service /patch
+
+      # Enable multi architecture support
+      # TODO parameterize and own this
+      nerdctl run --privileged --rm "tonistiigi/binfmt:qemu-v6.2.0" --install all
+
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      # Create the fix permissions script
+      sudo tee "/perm_fix" > /dev/null <<-EOF
+      #!/usr/bin/env bash
+      chown -R root:$(whoami) /run/buildkit
+      EOF
+      sudo chmod u+x /perm_fix
+      sudo chmod go-rwx /perm_fix
+      # Now bounce that shite
+      sudo systemctl daemon-reload
+      sudo systemctl restart buildkit
+
+# TODO parameterize this and allow people to control it? or stick with buildkit limits?
+cpus: 4
+memory: 16GiB
+disk: 100GiB
