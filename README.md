@@ -21,6 +21,12 @@ brew install --HEAD codecomet
 codecomet-machine install
 ```
 
+Give it some time to boot, then you can verify it is up with:
+
+```shell
+codecomet-machine status
+```
+
 ### Caveats
 
 Currently, the formula conflicts with `lima`.
