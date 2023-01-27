@@ -2,6 +2,7 @@ package bash
 
 import (
 	_ "embed"
+	sh_art "github.com/codecomet-io/installers/sdk/bash/sh-art"
 	"github.com/codecomet-io/isovaline/isovaline/core/log"
 	"github.com/codecomet-io/isovaline/sdk/codecomet"
 	"github.com/codecomet-io/isovaline/sdk/wrapllb"
@@ -12,6 +13,7 @@ import (
 
 const tempMountLocation = "/root"
 const localMountLocation = "/_cc/bash"
+const defaultTempFSSize = 128
 
 const (
 	MUTE int = iota
@@ -81,15 +83,15 @@ var (
 type Bash struct {
 	// State we are manipulating
 	State llb.State
+
 	// Whether the state is readonly
 	ReadOnly bool
-
 	// Toggle debug on
 	Debug bool
 	// Toggle strict behavior on
 	Strict bool
-	// Control fancy output
-	Colors bool
+	// Temp size
+	TMPFSSize int64
 
 	// Environment
 	Env map[string]string
@@ -109,7 +111,7 @@ type Bash struct {
 	Expert *Config
 
 	// Private asset compiler helper
-	library *assets
+	library *sh_art.Assets
 }
 
 func New(src llb.State) *Bash {
@@ -120,7 +122,7 @@ func New(src llb.State) *Bash {
 	}
 
 	// Pack the assets
-	lib := &assets{}
+	lib := &sh_art.Assets{}
 	cnf := &Config{
 		// Default bash behavior
 		BraceExpand:         true,
@@ -147,11 +149,6 @@ func New(src llb.State) *Bash {
 		Env:    env,
 		State:  src,
 		Dir:    tempMountLocation,
-		Temp: map[wrapllb.Target]*wrapllb.Temp{
-			tempMountLocation: {
-				Size: 128 * 1024 * 1024,
-			},
-		},
 		Mount: map[wrapllb.Target]*wrapllb.State{
 			localMountLocation: {
 				ReadOnly: true,
@@ -160,6 +157,7 @@ func New(src llb.State) *Bash {
 				Path:     "/",
 			},
 		},
+		Temp:  make(map[wrapllb.Target]*wrapllb.Temp),
 		Cache: make(map[wrapllb.Target]*wrapllb.Cache),
 
 		library: lib,
@@ -208,6 +206,14 @@ func (bsh *Bash) Run(name string, com string /*, pg llb.RunOption*/) {
 
 	if bsh.Env["CC_DEBUGGER_IP"] == "" {
 		bsh.Env["CC_DEBUGGER_IP"] = getOutboundIP().String()
+	}
+
+	sz := bsh.TMPFSSize
+	if sz == 0 {
+		sz = defaultTempFSSize
+	}
+	bsh.Temp[tempMountLocation] = &wrapllb.Temp{
+		Size: sz * 1024 * 1024,
 	}
 
 	ce := &codecomet.Exec{

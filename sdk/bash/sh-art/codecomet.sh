@@ -225,7 +225,7 @@ cc::tracer(){
   local col
 
   [ "$CC_DEBUG_CORE" == "true" ] || [ "${BASH_SOURCE[1]}" != "${BASH_SOURCE[0]}" ] || return 0
-  >&2 printf "\n"
+  printf "\n"
 
   for (( j=$(( length - 1 )); j>0; j-- )); do
     [ "$CC_DEBUG_CORE" == "true" ] || [ "${BASH_SOURCE[$j]}" != "${BASH_SOURCE[0]}" ] || {
@@ -245,13 +245,14 @@ cc::tracer(){
     } || {
       col=$CC_COLOR_GREEN
     }
-    >&2 _cc_private::console::inline "$col" "$CC_COLOR_BLACK" "file   " printf "%-35s" "$filename"
-    >&2 _cc_private::console::inline "$col" "$CC_COLOR_BLACK" "line" printf "%-9s" "#$linenumber"
-    >&2 _cc_private::console::inline "$col" "$CC_COLOR_BLACK" "function" printf "%-30s" "$funcname()"
-    >&2 printf "\n"
+
+    _cc_private::console::inline "$col" "$CC_COLOR_BLACK" "file   " printf "%-45s" "$filename"
+    _cc_private::console::inline "$col" "$CC_COLOR_BLACK" "line" printf "%-9s" "#$linenumber"
+    _cc_private::console::inline "$col" "$CC_COLOR_BLACK" "function" printf "%-30s" "$funcname()"
+    printf "\n"
     [ "$j" != 1 ] || {
-      >&2 _cc_private::console "$CC_COLOR_BLUE" "$CC_COLOR_WHITE" "command" printf "%s" "$filecontent"
-      >&2 _cc_private::console "$CC_COLOR_RED" "$CC_COLOR_WHITE" "output" printf ""
+      _cc_private::console "$CC_COLOR_BLUE" "$CC_COLOR_WHITE" "command" printf "%s" "$filecontent"
+      _cc_private::console "$CC_COLOR_RED" "$CC_COLOR_WHITE" "output" printf ""
     }
 
   done
@@ -277,10 +278,11 @@ cc::trap::err(){
   # Dropping the rest of the stack?
 
   >&2 printf "\n"
-  >&2 _cc_private::console::inline "$CC_COLOR_RED" "$CC_COLOR_BLACK" "file   " printf "%-35s" "$_CC_PRIVATE_ERR_STACK"
+  >&2 _cc_private::console::inline "$CC_COLOR_RED" "$CC_COLOR_BLACK" "file   " printf "%-45s" "$_CC_PRIVATE_ERR_STACK"
   >&2 _cc_private::console::inline "$CC_COLOR_RED" "$CC_COLOR_BLACK" "line" printf "%-9s" "#$_CC_PRIVATE_ERR_LNO"
-  >&2 _cc_private::console::inline "$CC_COLOR_RED" "$CC_COLOR_BLACK" "command" printf "%-30s" "$_CC_PRIVATE_ERR_CMD"
   >&2 _cc_private::console::inline "$CC_COLOR_RED" "$CC_COLOR_BLACK" "exit" printf "%s" "$_CC_PRIVATE_ERR_EX"
+  >&2 printf "\n"
+  >&2 _cc_private::console::inline "$CC_COLOR_RED" "$CC_COLOR_BLACK" "command" printf "%-30s" "$_CC_PRIVATE_ERR_CMD"
   >&2 _cc_private::tput setaf "$CC_COLOR_DEFAULT_FRONT"
   >&2 printf "\n"
 

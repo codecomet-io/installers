@@ -1,4 +1,4 @@
-package bash
+package sh_art
 
 import (
 	_ "embed"
@@ -23,13 +23,13 @@ const (
 	commanderFile = "codecomet"
 )
 
-type assets struct {
+type Assets struct {
 	state llb.State
 
 	folder string
 }
 
-func (ass *assets) ensureState() error {
+func (ass *Assets) ensureState() error {
 	if ass.folder == "" {
 		d, e := os.MkdirTemp("", "codecomet.*.shell")
 		if e != nil {
@@ -43,7 +43,7 @@ func (ass *assets) ensureState() error {
 	return nil
 }
 
-func (ass *assets) getFile(name string) (string, error) {
+func (ass *Assets) getFile(name string) (string, error) {
 	e := ass.ensureState()
 	if e != nil {
 		return "", e
@@ -55,12 +55,12 @@ func (ass *assets) getFile(name string) (string, error) {
 	return f.Name(), e
 }
 
-func (ass *assets) GetLocalState() (error, llb.State) {
+func (ass *Assets) GetLocalState() (error, llb.State) {
 	e := ass.ensureState()
 	return e, ass.state
 }
 
-func (ass *assets) PackCommander() (error, string) {
+func (ass *Assets) PackCommander() (error, string) {
 	f, e := ass.getFile(commanderFile)
 	if e != nil {
 		return e, commanderFile
@@ -72,7 +72,7 @@ func (ass *assets) PackCommander() (error, string) {
 	return e, commanderFile
 }
 
-func (ass *assets) PackAction(com string) (error, string) {
+func (ass *Assets) PackAction(com string) (error, string) {
 	f, e := ass.getFile("action.*.sh")
 	act := path.Base(f)
 	if e != nil {

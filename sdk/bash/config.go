@@ -119,6 +119,7 @@ type Config struct {
 	XTrace bool `codecomet:"xtrace"`
 }
 
+// Hard to fit into serializable config at this point (swapped key values, bool to +o/-o)
 func (cnf *Config) toString() string {
 	com := []string{
 		"set",

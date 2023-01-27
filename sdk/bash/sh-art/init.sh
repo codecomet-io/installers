@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -o errexit -o errtrace -o functrace -o nounset -o pipefail -o monitor
 
+# See https://manpages.ubuntu.com/manpages/xenial/man1/eatmydata.1.html
+# Technically, we get a 10% speedup with apt operations for eg
+# XXX careful here if this is going to be used in a chroot
 cc::init::speedup(){
   ! command -v eatmydata >/dev/null || export LD_PRELOAD=libeatmydata.so
 }
