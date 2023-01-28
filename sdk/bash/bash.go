@@ -14,6 +14,7 @@ import (
 const tempMountLocation = "/root"
 const scriptsMountLocation = "/_cc/bash"
 const defaultTempFSSize = 128
+const defaultHostname = "codecomet-bash"
 
 const (
 	MUTE int = iota
@@ -96,6 +97,9 @@ type Bash struct {
 	// Environment
 	Env map[string]string
 
+	// Hostname
+	Hostname string
+
 	// Temp mounts
 	Temp map[wrapllb.Target]*wrapllb.Temp
 	// Cache mounts
@@ -117,6 +121,8 @@ func New(src llb.State) *Bash {
 	for k, v := range BaseEnv {
 		env[k] = v
 	}
+
+	src = src.Hostname(defaultHostname)
 
 	cnf := &Config{
 		// Default bash behavior
@@ -172,6 +178,10 @@ func (bsh *Bash) Run(name string, com []string /*, pg llb.RunOption*/) {
 
 	if bsh.Env["CC_DEBUGGER_IP"] == "" {
 		bsh.Env["CC_DEBUGGER_IP"] = getOutboundIP().String()
+	}
+
+	if bsh.Hostname != "" {
+		bsh.State = bsh.State.Hostname(bsh.Hostname)
 	}
 
 	sz := bsh.TMPFSSize

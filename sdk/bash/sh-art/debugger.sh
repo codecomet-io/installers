@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -o errexit -o errtrace -o functrace -o nounset -o pipefail
+set -o errexit -o errtrace -o functrace -o nounset -o pipefail -o monitor
 
 # Fancy prompt adapted from https://github.com/pombadev/fancy-linux-prompt/blob/master/LICENSE under MIT License
 __powerline() {

@@ -19,7 +19,7 @@ const (
 	permissions   = 0500
 	commanderFile = "codecomet"
 	library       = "library"
-	actionFile    = "action"
+	actionFile    = "action.sh"
 )
 
 func Pack(com []string) (llb.State, []string) {

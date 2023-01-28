@@ -224,11 +224,12 @@ cc::tracer(){
   local funcname
   local col
 
-  [ "$CC_DEBUG_CORE" == "true" ] || [ "${BASH_SOURCE[1]}" != "${BASH_SOURCE[0]}" ] || return 0
+  [ "$CC_DEBUG_CORE" == "true" ] || [[ "${BASH_SOURCE[1]}" == *"action.sh" ]] || return 0
+
   printf "\n"
 
   for (( j=$(( length - 1 )); j>0; j-- )); do
-    [ "$CC_DEBUG_CORE" == "true" ] || [ "${BASH_SOURCE[$j]}" != "${BASH_SOURCE[0]}" ] || {
+    [ "$CC_DEBUG_CORE" == "true" ] || [[ "${BASH_SOURCE[$j]}" == *"action.sh" ]] || {
       continue
     }
 
@@ -310,7 +311,7 @@ _DC_NO_REENTRY=
 
 # Trap exit for the actual cleanup
 cc::trap::exit() {
-  { set +x; } 2>/dev/null
+  # { set +x; } 2>/dev/null
 
   local ex="$1"
   local i
