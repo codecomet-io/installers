@@ -51,6 +51,11 @@ cc::init::trap(){
 
 # Boot if we have an argument - otherwise, we are being sourced
 if [ "$#" -gt 0 ]; then
+  mkdir -p "$TMPDIR"
+  rm -Rf "$CC_TMPFS"/.codecomet
+  mkdir -p "$CC_TMPFS"/.codecomet/bin
+  mkdir -p "$CC_TMPFS"/.codecomet/logs
+
   # Set logger to env var from the Bash helper
   cc::logger::level::set "$CC_DEBUG_LEVEL"
 
@@ -64,12 +69,6 @@ if [ "$#" -gt 0 ]; then
   else
     dc::trap::register cc::debugger::start
   fi
-
-  mkdir -p "$TMPDIR"
-
-  rm -Rf "$CC_TMPFS"/.codecomet
-  mkdir -p "$CC_TMPFS"/.codecomet/bin
-  mkdir -p "$CC_TMPFS"/.codecomet/logs
 
   # XXX technically, we receive a bunch of scripts, and we could just play them all - use case is not completely clear yet
   out="$CC_TMPFS"/.codecomet/logs/stdout.log

@@ -29,3 +29,9 @@ Provides a high level API to run bash commands.
 - provide or mount an editor in the state?
 - provide a static mounted bash in a distro less fashion?
 - provide a way for the user to use their own .profile / .bashrc / .inputrc?
+
+## Useful
+
+```bash
+Current options: printf "%s\n" "$-"
+```

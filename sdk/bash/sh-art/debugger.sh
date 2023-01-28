@@ -77,7 +77,7 @@ __powerline() {
 
 _cc_private::debugger::setup(){
   # Set-up PS1
-  cat << EOF > /root/.profile
+  cat << EOF > "$CC_TMPFS"/.profile
 # export PS1='\[\033[01;32m\]CodeComet\[\033[00m\] \w \$ '
 alias l="ls -lA"
 source ${BASH_SOURCE[0]}
@@ -96,12 +96,12 @@ _cc_private::console::inline "$CC_COLOR_YELLOW" "$CC_COLOR_BLACK" "ccdebug_stdex
 _cc_private::console::inline "$CC_COLOR_YELLOW" "$CC_COLOR_BLACK" "ccdebug_action" printf "will output the location of your action script\n\n"
 _cc_private::console::inline "$CC_COLOR_GREEN" "$CC_COLOR_BLACK" "Tip           " printf "If you want to re-run your action, just call \\\$(ccdebug_action)\n"
 
-touch "$CC_TMPFS/.codecomet/connected"
+# touch "$CC_TMPFS/.codecomet/connected"
 __powerline
 
 EOF
 
-  cat << EOF >> /root/.inputrc
+  cat << EOF >> "$CC_TMPFS"/.inputrc
 "\e[A": history-search-backward
 "\e[B": history-search-forward
 set show-all-if-ambiguous on
@@ -143,7 +143,16 @@ cc::debugger::front(){
   }
 
   # Ok, it is live. Do we have a client?
-  [ -e "$CC_TMPFS/.codecomet/connected" ] && {
+  # XXX unfortunately, this does not work as expected... socat does start the process first, bash sources the files and create the stamp file...
+  local lasttry
+  local current
+  lasttry="$(cat $CC_TMPFS/.codecomet/lasttry 2>/dev/null)" || true
+  current="$(date +%s)"
+  # The older an unconnected socat could be is 2 seconds - if greater than that, then we definitely have a client
+  # However, it is possible that a client has been connected for less than 2 seconds (since socat call) when the failure happens,
+  # which means the client will wrongly get the boot... no good solution right now
+  [ $(( current - lasttry)) -gt 2 ] && {
+  # [ -e "$CC_TMPFS/.codecomet/connected" ] && {
     cc::logger::debug "[debugger-front] we have a connected client"
     # Yes, then foreground and let it sit
     fg 2>/dev/null
@@ -170,7 +179,8 @@ cc::debugger::live(){
 
   while true; do
     lasttry="$(date +%s)"
-    socat exec:'bash -li',pty,stderr,setsid,sigint,sane tcp:$CC_DEBUGGER_IP:$CC_DEBUGGER_PORT,connect-timeout=1 2>/dev/null && {
+    printf "%s" "$lasttry" > "$CC_TMPFS/.codecomet/lasttry"
+    HOME="$CC_TMPFS" socat exec:'bash -li',pty,stderr,setsid,sigint,sane tcp:$CC_DEBUGGER_IP:$CC_DEBUGGER_PORT,connect-timeout=1 2>/dev/null && {
       cc::logger::debug "[debugger-live] socat returned successfully, meaning the other end has exited 0"
       break
     } || {
@@ -220,7 +230,7 @@ cc::debugger::start(){
 
   while [ "$x" -lt "$CC_DEBUGGER_GRACE" ]; do
     lasttry="$(date +%s)"
-    socat exec:'bash -li',pty,stderr,setsid,sigint,sane tcp:$CC_DEBUGGER_IP:$CC_DEBUGGER_PORT,connect-timeout=1 2>/dev/null && {
+    HOME="$CC_TMPFS" socat exec:'bash -li',pty,stderr,setsid,sigint,sane tcp:$CC_DEBUGGER_IP:$CC_DEBUGGER_PORT,connect-timeout=1 2>/dev/null && {
       cc::logger::debug "[debugger-stat] socat returned successfully, meaning the other end has exited 0"
       break
     } || {

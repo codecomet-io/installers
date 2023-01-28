@@ -11,8 +11,8 @@ import (
 	"os"
 )
 
-const tempMountLocation = "/root"
-const scriptsMountLocation = "/_cc/bash"
+const tempMountLocation = "/codecomet"
+const scriptsMountLocation = "/_cc/state/bash"
 const defaultTempFSSize = 128
 const defaultHostname = "codecomet-bash"
 
@@ -133,8 +133,8 @@ func New(src llb.State) *Bash {
 
 		// Job control for live debuggers
 		Monitor: true,
-		// XXX does it allow the debugger to access the history?
-		History: true,
+		// History:    true,
+		// HistExpand: true,
 	}
 
 	// Default behavior is strict, no debug, in the tmpfs dir
@@ -166,6 +166,7 @@ func (bsh *Bash) pack(libs []string, action string) (llb.State, []string) {
 	}
 
 	return sh_art.Pack(append(libs, "#!/usr/bin/env bash\n"+bsh.Expert.toString()+"\n"+action))
+	// return sh_art.Pack(append(libs, "#!/usr/bin/env bash\n"+bsh.Expert.toString()+"\n"+action))
 }
 
 func (bsh *Bash) Run(name string, com []string /*, pg llb.RunOption*/) {
