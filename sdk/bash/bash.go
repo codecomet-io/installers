@@ -12,7 +12,7 @@ import (
 )
 
 const tempMountLocation = "/root"
-const localMountLocation = "/_cc/bash"
+const scriptsMountLocation = "/_cc/bash"
 const defaultTempFSSize = 128
 
 const (
@@ -109,9 +109,6 @@ type Bash struct {
 	Group *wrapllb.Group
 	// Advanced bash options
 	Expert *Config
-
-	// Private asset compiler helper
-	library *sh_art.Assets
 }
 
 func New(src llb.State) *Bash {
@@ -121,8 +118,6 @@ func New(src llb.State) *Bash {
 		env[k] = v
 	}
 
-	// Pack the assets
-	lib := &sh_art.Assets{}
 	cnf := &Config{
 		// Default bash behavior
 		BraceExpand:         true,
@@ -136,11 +131,6 @@ func New(src llb.State) *Bash {
 		History: true,
 	}
 
-	e, st := lib.GetLocalState()
-	if e != nil {
-		log.Fatal().Msgf("failed to get local mount: %s", e)
-	}
-
 	// Default behavior is strict, no debug, in the tmpfs dir
 	return &Bash{
 		Strict: true,
@@ -149,22 +139,13 @@ func New(src llb.State) *Bash {
 		Env:    env,
 		State:  src,
 		Dir:    tempMountLocation,
-		Mount: map[wrapllb.Target]*wrapllb.State{
-			localMountLocation: {
-				ReadOnly: true,
-				NoOutput: true,
-				Source:   st,
-				Path:     "/",
-			},
-		},
-		Temp:  make(map[wrapllb.Target]*wrapllb.Temp),
-		Cache: make(map[wrapllb.Target]*wrapllb.Cache),
-
-		library: lib,
+		Mount:  make(map[wrapllb.Target]*wrapllb.State),
+		Temp:   make(map[wrapllb.Target]*wrapllb.Temp),
+		Cache:  make(map[wrapllb.Target]*wrapllb.Cache),
 	}
 }
 
-func (bsh *Bash) pack(script string) []string {
+func (bsh *Bash) pack(libs []string, action string) (llb.State, []string) {
 	// Toggle on debug and strict
 	if bsh.Debug {
 		bsh.Expert.XTrace = true
@@ -178,30 +159,15 @@ func (bsh *Bash) pack(script string) []string {
 		bsh.Expert.PipeFail = true
 	}
 
-	// Pack the main library
-	e, cmd := bsh.library.PackCommander()
-	if e != nil {
-		log.Fatal().Msgf("failed to pack library: %s", e)
-	}
-
-	// Pack the user script
-	e, pth := bsh.library.PackAction("#!/usr/bin/env bash\n" + bsh.Expert.toString() + "\n" + script)
-	if e != nil {
-		log.Fatal().Msgf("failed to pack script: %s", e)
-	}
-
-	return []string{
-		// Our library...
-		localMountLocation + "/" + cmd,
-		// With the user action as the one argument
-		pth,
-	}
+	return sh_art.Pack(append(libs, "#!/usr/bin/env bash\n"+bsh.Expert.toString()+"\n"+action))
 }
 
-func (bsh *Bash) Run(name string, com string /*, pg llb.RunOption*/) {
+func (bsh *Bash) Run(name string, com []string /*, pg llb.RunOption*/) {
 	// No name means the user script is the name
+	act := com[len(com)-1]
+	com = com[:len(com)-1]
 	if name == "" {
-		name = com
+		name = act
 	}
 
 	if bsh.Env["CC_DEBUGGER_IP"] == "" {
@@ -216,6 +182,17 @@ func (bsh *Bash) Run(name string, com string /*, pg llb.RunOption*/) {
 		Size: sz * 1024 * 1024,
 	}
 
+	sst, scripts := bsh.pack(com, act)
+	bsh.Mount[scriptsMountLocation] = &wrapllb.State{
+		ReadOnly: true,
+		NoOutput: true,
+		Source:   sst,
+		Path:     "/",
+	}
+	for k, v := range scripts {
+		scripts[k] = scriptsMountLocation + "/" + v
+	}
+
 	ce := &codecomet.Exec{
 		// Stuff in the base
 		Base: codecomet.Base{
@@ -225,7 +202,7 @@ func (bsh *Bash) Run(name string, com string /*, pg llb.RunOption*/) {
 
 		// And the rest
 		Dir:      bsh.Dir,
-		Args:     bsh.pack(com),
+		Args:     scripts,
 		Temp:     bsh.Temp,
 		Cache:    bsh.Cache,
 		Mount:    bsh.Mount,

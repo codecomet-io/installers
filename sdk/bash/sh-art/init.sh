@@ -8,24 +8,6 @@ cc::init::speedup(){
   ! command -v eatmydata >/dev/null || export LD_PRELOAD=libeatmydata.so
 }
 
-cc::bootstrap(){
-  local scriptFilename="$1"
-  local base
-  base="$(dirname "${BASH_SOURCE[0]}")"
-
-  local out="$CC_TMPFS"/.codecomet/logs/stdout.log
-  local err="$CC_TMPFS"/.codecomet/logs/stderr.log
-
-  cp "$base/$scriptFilename" "$CC_TMPFS/.codecomet/bin"
-  scriptFilename="$CC_TMPFS/.codecomet/bin/$scriptFilename"
-
-  # Generate starter script as well for future use
-  # echo "$scriptFilename" > "$CC_TMPFS"/.codecomet/bin/cc-redo
-
-  # shellcheck disable=SC1090
-  source "$scriptFilename" > >(tee -a "$out") 2> >(tee -a "$err" >&2)
-}
-
 ccdebug_stdout(){
   if [ "${1:-}" == "-f" ]; then
     tail -f "$CC_TMPFS"/.codecomet/logs/stdout.log
@@ -69,13 +51,6 @@ cc::init::trap(){
 
 # Boot if we have an argument - otherwise, we are being sourced
 if [ "$#" -gt 0 ]; then
-  rm -Rf "$CC_TMPFS"/.codecomet
-  mkdir -p "$CC_TMPFS"/.codecomet/bin
-  mkdir -p "$CC_TMPFS"/.codecomet/logs
-  mkdir -p "$TMPDIR"
-
-  export _CC_PRIVATE_SCRIPT="$CC_TMPFS/.codecomet/bin/$1"
-
   # Set logger to env var from the Bash helper
   cc::logger::level::set "$CC_DEBUG_LEVEL"
 
@@ -90,12 +65,31 @@ if [ "$#" -gt 0 ]; then
     dc::trap::register cc::debugger::start
   fi
 
+  mkdir -p "$TMPDIR"
+
+  rm -Rf "$CC_TMPFS"/.codecomet
+  mkdir -p "$CC_TMPFS"/.codecomet/bin
+  mkdir -p "$CC_TMPFS"/.codecomet/logs
+
+  # XXX technically, we receive a bunch of scripts, and we could just play them all - use case is not completely clear yet
+  out="$CC_TMPFS"/.codecomet/logs/stdout.log
+  err="$CC_TMPFS"/.codecomet/logs/stderr.log
+
+  while [ "$#" -gt 1 ]; do
+    cp "$1" "$CC_TMPFS"/.codecomet/bin
+    # shellcheck disable=SC1090
+    source "$CC_TMPFS"/.codecomet/bin/"$(basename "$1")"
+    shift
+  done
+  cp "$1" "$CC_TMPFS"/.codecomet/bin
+  export _CC_PRIVATE_SCRIPT="$CC_TMPFS"/.codecomet/bin/"$(basename "$1")"
+
   # Boot it
-  #_CC_PRIVATE_SCRIPT=
-  #export _CC_PRIVATE_SCRIPT
-  cc::bootstrap "$@"
+  # shellcheck disable=SC1090
+  source "$_CC_PRIVATE_SCRIPT" > >(tee -a "$out") 2> >(tee -a "$err" >&2)
 else
   # If we are a library, toss this one so we do not exit on any error...
+  # This is especially important for the reverse debugger
   set +o errexit
 fi
 

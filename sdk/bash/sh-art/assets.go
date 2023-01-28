@@ -2,11 +2,8 @@ package sh_art
 
 import (
 	_ "embed"
-	"github.com/codecomet-io/isovaline/sdk/codecomet"
 	"github.com/moby/buildkit/client/llb"
-	"os"
-	"path"
-	"strings"
+	"strconv"
 )
 
 //go:embed debugger.sh
@@ -21,66 +18,23 @@ var shcodecomet string
 const (
 	permissions   = 0500
 	commanderFile = "codecomet"
+	library       = "library"
+	actionFile    = "action"
 )
 
-type Assets struct {
-	state llb.State
-
-	folder string
-}
-
-func (ass *Assets) ensureState() error {
-	if ass.folder == "" {
-		d, e := os.MkdirTemp("", "codecomet.*.shell")
-		if e != nil {
-			return e
+func Pack(com []string) (llb.State, []string) {
+	states := []llb.State{}
+	scripts := []string{}
+	scripts = append(scripts, commanderFile)
+	states = append(states, llb.Scratch().File(llb.Mkfile("/"+commanderFile, permissions, []byte(shcodecomet+"\n"+shdebugger+"\n"+shinit))))
+	for k, v := range com {
+		dest := library + strconv.Itoa(k) + ".sh"
+		if k == len(com)-1 {
+			dest = actionFile
 		}
-		ass.folder = d
-		ass.state = codecomet.From(&codecomet.Local{
-			Path: d,
-		})
+		scripts = append(scripts, dest)
+		states = append(states, llb.Scratch().File(llb.Mkfile("/"+dest, permissions, []byte(v))))
 	}
-	return nil
-}
 
-func (ass *Assets) getFile(name string) (string, error) {
-	e := ass.ensureState()
-	if e != nil {
-		return "", e
-	}
-	if !strings.Contains(name, "*") {
-		return path.Join(ass.folder, name), nil
-	}
-	f, e := os.CreateTemp(ass.folder, name)
-	return f.Name(), e
-}
-
-func (ass *Assets) GetLocalState() (error, llb.State) {
-	e := ass.ensureState()
-	return e, ass.state
-}
-
-func (ass *Assets) PackCommander() (error, string) {
-	f, e := ass.getFile(commanderFile)
-	if e != nil {
-		return e, commanderFile
-	}
-	_, e = os.Stat(f)
-	if e != nil {
-		e = os.WriteFile(f, []byte(shcodecomet+"\n"+shdebugger+"\n"+shinit), permissions)
-	}
-	return e, commanderFile
-}
-
-func (ass *Assets) PackAction(com string) (error, string) {
-	f, e := ass.getFile("action.*.sh")
-	act := path.Base(f)
-	if e != nil {
-		return e, act
-	}
-	e = os.WriteFile(f, []byte(com), permissions)
-	if e == nil {
-		e = os.Chmod(f, permissions)
-	}
-	return e, act
+	return llb.Merge(states), scripts
 }
