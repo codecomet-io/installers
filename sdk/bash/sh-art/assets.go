@@ -23,7 +23,7 @@ const (
 	actionFile    = "action.sh"
 )
 
-func Pack(com []string) (llb.State, []string) {
+func Pack(com ...string) (llb.State, []string) {
 	states := []llb.State{}
 	scripts := []string{}
 	scripts = append(scripts, commanderFile)
@@ -33,6 +33,7 @@ func Pack(com []string) (llb.State, []string) {
 	}
 
 	states = append(states, llb.Scratch().File(llb.Mkfile("/"+commanderFile, permissions, []byte(shcodecomet+"\n"+shdebugger+"\n"+shinit)), ll...))
+
 	for k, v := range com {
 		dest := library + strconv.Itoa(k) + ".sh"
 		if k == len(com)-1 {

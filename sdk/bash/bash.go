@@ -151,28 +151,10 @@ func New(src llb.State) *Bash {
 	}
 }
 
-func (bsh *Bash) pack(libs []string, action string) (llb.State, []string) {
-	// Toggle on debug and strict
-	if bsh.Debug {
-		bsh.Expert.XTrace = true
-	}
-	// Note: if one wants only some of these, Strict should be set to false
-	if bsh.Strict {
-		bsh.Expert.ErrExit = true
-		bsh.Expert.ErrTrace = true
-		bsh.Expert.FuncTrace = true
-		bsh.Expert.NoUnset = true
-		bsh.Expert.PipeFail = true
-	}
-
-	return sh_art.Pack(append(libs, "#!/usr/bin/env bash\n"+bsh.Expert.toString()+"\n"+action))
-	// return sh_art.Pack(append(libs, "#!/usr/bin/env bash\n"+bsh.Expert.toString()+"\n"+action))
-}
-
-func (bsh *Bash) Run(name string, com []string /*, pg llb.RunOption*/) {
+func (bsh *Bash) Run(name string, com ...string /*, pg llb.RunOption*/) {
 	// No name means the user script is the name
 	act := com[len(com)-1]
-	com = com[:len(com)-1]
+	// com = com[:len(com)-1]
 	if name == "" {
 		name = act
 	}
@@ -193,7 +175,23 @@ func (bsh *Bash) Run(name string, com []string /*, pg llb.RunOption*/) {
 		Size: sz * 1024 * 1024,
 	}
 
-	sst, scripts := bsh.pack(com, act)
+	// Toggle on debug and strict
+	if bsh.Debug {
+		bsh.Expert.XTrace = true
+	}
+	// Note: if one wants only some of these, Strict should be set to false
+	if bsh.Strict {
+		bsh.Expert.ErrExit = true
+		bsh.Expert.ErrTrace = true
+		bsh.Expert.FuncTrace = true
+		bsh.Expert.NoUnset = true
+		bsh.Expert.PipeFail = true
+	}
+
+	// Pad-up the actual action - what about the libs?
+	com[len(com)-1] = "#!/usr/bin/env bash\n" + bsh.Expert.toString() + "\n" + act
+
+	sst, scripts := sh_art.Pack(com...)
 	bsh.Mount[scriptsMountLocation] = &wrapllb.State{
 		ReadOnly: true,
 		NoOutput: true,

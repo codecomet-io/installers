@@ -8,6 +8,7 @@ import (
 	"github.com/codecomet-io/isovaline/sdk/wrapllb"
 	"github.com/codecomet-io/isovaline/sdk/wrapllb/platform"
 	"github.com/moby/buildkit/client/llb"
+	"sort"
 	"strings"
 )
 
@@ -84,6 +85,7 @@ func (a *AptGet) AddArchitecture(platforms []*platform.Platform) {
 	for _, v := range platforms {
 		archs = append(archs, string(PlatformToDebianArchitecture(v)))
 	}
+	sort.Strings(archs)
 	name := "dpkg --add-architecture " + strings.Join(archs, " ")
 	com := ""
 	for _, v := range archs {
@@ -91,7 +93,7 @@ func (a *AptGet) AddArchitecture(platforms []*platform.Platform) {
 	}
 
 	a.Bash.TMPFSSize = smallTempFSSize
-	a.Bash.Run(name, a.wrap(com))
+	a.Bash.Run(name, a.wrap(com)...)
 
 }
 
@@ -102,7 +104,7 @@ func (a *AptGet) Update() {
 	name := "apt-get update"
 
 	a.Bash.TMPFSSize = smallTempFSSize
-	a.Bash.Run(name, a.wrap(com))
+	a.Bash.Run(name, a.wrap(com)...)
 }
 
 func (a *AptGet) Do(some []string) {
@@ -110,7 +112,7 @@ func (a *AptGet) Do(some []string) {
 	name := com
 
 	a.Bash.TMPFSSize = smallTempFSSize
-	a.Bash.Run(name, a.wrap(com))
+	a.Bash.Run(name, a.wrap(com)...)
 }
 
 func (a *AptGet) Install(packages interface{}) {
@@ -133,6 +135,8 @@ func (a *AptGet) Install(packages interface{}) {
 		log.Fatal().Msgf("invalid packages type %s", v)
 	}
 
+	sort.Strings(ipac)
+
 	packs := strings.Join(ipac, " ")
 
 	// Download first, keeping the big store usage to a minimum
@@ -140,7 +144,7 @@ func (a *AptGet) Install(packages interface{}) {
 	name := fmt.Sprintf("apt-get install %s", packs)
 
 	a.Bash.TMPFSSize = bigTempFSSize
-	a.Bash.Run(name, a.wrap(com))
+	a.Bash.Run(name, a.wrap(com)...)
 }
 
 func (a *AptGet) Upgrade() {
@@ -150,7 +154,7 @@ func (a *AptGet) Upgrade() {
 
 	a.Bash.TMPFSSize = bigTempFSSize
 	// a.Bash.Cache[sharedStoreMountLocation] = sharedStore
-	a.Bash.Run(name, a.wrap(com))
+	a.Bash.Run(name, a.wrap(com)...)
 }
 
 func (a *AptGet) Purge(packages interface{}) {
@@ -173,6 +177,8 @@ func (a *AptGet) Purge(packages interface{}) {
 		log.Fatal().Msgf("invalid packages type %s", v)
 	}
 
+	sort.Strings(ipac)
+
 	packs := strings.Join(ipac, " ")
 
 	// This one does not need any of the mounts
@@ -181,7 +187,7 @@ func (a *AptGet) Purge(packages interface{}) {
 	name := fmt.Sprintf("apt-get purge %s", packs)
 
 	a.Bash.TMPFSSize = smallTempFSSize
-	a.Bash.Run(name, a.wrap(com))
+	a.Bash.Run(name, a.wrap(com)...)
 }
 
 func (a *AptGet) wrap(com string) []string {
