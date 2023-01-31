@@ -2,12 +2,12 @@ package bash
 
 import (
 	_ "embed"
-	sh_art "github.com/codecomet-io/installers/sdk/bash/sh-art"
+	sh_art "github.com/codecomet-io/installers/sdk/bin/bash/sh-art"
+	"github.com/codecomet-io/installers/sdk/utils"
 	"github.com/codecomet-io/isovaline/isovaline/core/log"
 	"github.com/codecomet-io/isovaline/sdk/codecomet"
 	"github.com/codecomet-io/isovaline/sdk/wrapllb"
 	"github.com/moby/buildkit/client/llb"
-	"net"
 	"os"
 )
 
@@ -38,19 +38,6 @@ func init() {
 	if b {
 		env_debug_live = v
 	}
-}
-
-// Get preferred outbound ip of this machine
-func getOutboundIP() net.IP {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
-	if err != nil {
-		log.Fatal().Msgf("%s", err)
-	}
-	defer conn.Close()
-
-	localAddr := conn.LocalAddr().(*net.UDPAddr)
-
-	return localAddr.IP
 }
 
 var (
@@ -160,7 +147,11 @@ func (bsh *Bash) Run(name string, com ...string /*, pg llb.RunOption*/) {
 	}
 
 	if bsh.Env["CC_DEBUGGER_IP"] == "" {
-		bsh.Env["CC_DEBUGGER_IP"] = getOutboundIP().String()
+		ip, err := utils.GetOutboundIP()
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to get outbound ip")
+		}
+		bsh.Env["CC_DEBUGGER_IP"] = ip.String()
 	}
 
 	if bsh.Hostname != "" {

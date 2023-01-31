@@ -24,7 +24,7 @@ ccdebug_stderr(){
   fi
 }
 
-ccdebug_ex(){
+ccdebug_stdex(){
   [ -e "$CC_TMPFS"/.codecomet/logs/ex.log ] && {
     cat "$CC_TMPFS"/.codecomet/logs/ex.log
   } || {
