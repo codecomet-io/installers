@@ -14,7 +14,11 @@ import (
 	"github.com/codecomet-io/isovaline/sdk/wrapllb"
 	"github.com/codecomet-io/isovaline/sdk/wrapllb/platform"
 	"github.com/moby/buildkit/client/llb"
+	"strconv"
 )
+
+// XXX we probably carry over stuff into /opt/macosxcross that we should not
+// Move the build to a temp directory instead...
 
 //go:embed patches/sdk_version.patch
 var sdk_patch string
@@ -161,7 +165,8 @@ func Add(sdkPath string, sdkVersion Version, debianVersion debian.Version, llvmV
 	bsh.Group = grp
 	// Because we need to add symlinks to /usr/bin/clang, as macoscross is confused
 	bsh.ReadOnly = false
-	bsh.Dir = "/opt/macosxcross"
+	// bsh.Dir = "/opt/macosxcross"
+	bsh.Dir = "/codecomet"
 
 	bsh.Mount["/input"] = &wrapllb.State{
 		NoOutput: true,
@@ -184,12 +189,13 @@ func Add(sdkPath string, sdkVersion Version, debianVersion debian.Version, llvmV
 	bsh.Env["OSX_VERSION_MIN"] = "10.9"
 	bsh.Env["UNATTENDED"] = "1"
 	bsh.Env["OCDEBUG"] = "" //"1"
+	bsh.Env["LLVMVERSION"] = strconv.Itoa(int(llvmVersion))
 	bsh.Run("Building macOS clang cross compilation toolchain", `
 		# Using llvm17 means we have to set these to workaround osxcross issues
-		export CC="clang-17"
-		export CXX="clang++-17"
-		ln -s /usr/lib/llvm-17/bin/clang /usr/bin/clang
-		ln -s /usr/lib/llvm-17/bin/clang++ /usr/bin/clang++
+		export CC="clang-$LLVMVERSION"
+		export CXX="clang++-$LLVMVERSION"
+		ln -s /usr/lib/llvm-$LLVMVERSION/bin/clang /usr/bin/clang
+		ln -s /usr/lib/llvm-$LLVMVERSION/bin/clang++ /usr/bin/clang++
 	
 		export INSTALLPREFIX="$TARGET_DIR"
 

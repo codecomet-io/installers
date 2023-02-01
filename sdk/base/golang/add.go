@@ -41,12 +41,15 @@ func Add(goVersion Version, goChecksum digest.Digest, plt *platform.Platform) ll
 		},
 	})
 
-	// Maybe miss group?
+	ll := []llb.ConstraintsOpt{
+		llb.ProgressGroup(grp.ID, grp.Name, grp.DoNotDisplay),
+	}
+
 	return wrapllb.Copy(
 		fromHttp,
 		"/go.tar.gz",
-		llb.Scratch(),
-		"/",
+		llb.Scratch().File(llb.Mkdir("/opt", 0755, llb.WithParents(true)), ll...),
+		"/opt",
 		&wrapllb.CopyOptions{
 			Unpack: true,
 		},
