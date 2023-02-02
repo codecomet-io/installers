@@ -7,18 +7,15 @@ import (
 	"github.com/codecomet-io/installers/sdk/base/c"
 	"github.com/codecomet-io/installers/sdk/base/debian"
 	"github.com/codecomet-io/installers/sdk/base/llvm"
+	"github.com/codecomet-io/installers/sdk/bin/apt"
 	"github.com/codecomet-io/installers/sdk/bin/bash"
 	"github.com/codecomet-io/installers/sdk/bin/patch"
-	"github.com/codecomet-io/installers/sdk/debian/apt"
 	"github.com/codecomet-io/isovaline/sdk/codecomet"
 	"github.com/codecomet-io/isovaline/sdk/wrapllb"
 	"github.com/codecomet-io/isovaline/sdk/wrapllb/platform"
 	"github.com/moby/buildkit/client/llb"
 	"strconv"
 )
-
-// XXX we probably carry over stuff into /opt/macosxcross that we should not
-// Move the build to a temp directory instead...
 
 //go:embed patches/sdk_version.patch
 var sdk_patch string

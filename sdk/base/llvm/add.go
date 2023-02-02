@@ -3,7 +3,7 @@ package llvm
 import (
 	"fmt"
 	"github.com/codecomet-io/installers/sdk/base/debian"
-	"github.com/codecomet-io/installers/sdk/debian/apt"
+	"github.com/codecomet-io/installers/sdk/bin/apt"
 	"github.com/codecomet-io/isovaline/isovaline/core/log"
 	"github.com/codecomet-io/isovaline/sdk/wrapllb"
 	"github.com/moby/buildkit/client/llb"

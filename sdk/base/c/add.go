@@ -2,7 +2,7 @@ package c
 
 import (
 	"fmt"
-	"github.com/codecomet-io/installers/sdk/debian/apt"
+	"github.com/codecomet-io/installers/sdk/bin/apt"
 	"github.com/codecomet-io/isovaline/sdk/wrapllb"
 	"github.com/codecomet-io/isovaline/sdk/wrapllb/platform"
 	"github.com/moby/buildkit/client/llb"

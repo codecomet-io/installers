@@ -11,7 +11,7 @@ import (
 	"net/url"
 )
 
-func getGoDownloadURL(version Version, plt *platform.Platform) *url.URL {
+func getDownloadURL(version Version, plt *platform.Platform) *url.URL {
 	arch := plt.OS + "-" + plt.Architecture
 	if plt.OS != platform.Linux {
 		log.Fatal().Msgf("Unsupported platform %s %s %s", plt.OS, plt.Architecture, plt.Variant)
@@ -33,7 +33,7 @@ func Add(goVersion Version, goChecksum digest.Digest, plt *platform.Platform) ll
 		ID:   fmt.Sprintf("Installing golang %s for %s", goVersion, plt.Architecture+plt.Variant),
 	}
 	fromHttp := codecomet.From(&codecomet.HTTP{
-		URL:    getGoDownloadURL(goVersion, plt),
+		URL:    getDownloadURL(goVersion, plt),
 		Digest: goChecksum,
 		Output: "go.tar.gz",
 		Base: codecomet.Base{

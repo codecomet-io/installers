@@ -3,11 +3,15 @@ package apt
 import (
 	_ "embed"
 	"fmt"
-	"github.com/codecomet-io/installers/sdk/bash"
+	"github.com/codecomet-io/installers/sdk/bin/bash"
 	"github.com/codecomet-io/isovaline/isovaline/core/log"
+	"github.com/codecomet-io/isovaline/sdk/codecomet"
 	"github.com/codecomet-io/isovaline/sdk/wrapllb"
 	"github.com/codecomet-io/isovaline/sdk/wrapllb/platform"
 	"github.com/moby/buildkit/client/llb"
+	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -41,8 +45,6 @@ var (
 	sharedStore = &wrapllb.Cache{
 		UniqueDescription: fmt.Sprintf("apt-get shared storage, including locks, lists and packages"),
 		SharingMode:       wrapllb.ModeShared,
-		ReadOnly:          false,
-		NoOutput:          false,
 	}
 )
 
@@ -80,6 +82,39 @@ func New(st llb.State) *AptGet {
 	return ap
 }
 
+func (a *AptGet) AddList(name string, sources string, key *url.URL) {
+	ll := []llb.ConstraintsOpt{}
+
+	if a.Group != nil {
+		ll = append(ll, llb.ProgressGroup(a.Group.ID, a.Group.Name, a.Group.DoNotDisplay))
+	}
+
+	addlist := llb.Scratch().
+		File(llb.Mkdir("/etc/apt/sources.list.d", 0755, llb.WithParents(true)), ll...).
+		File(llb.Mkfile("/etc/apt/sources.list.d/"+name+".list", 0755, []byte(sources)), ll...)
+	mergees := []llb.State{a.State, addlist}
+
+	if key != nil {
+		h := &codecomet.HTTP{
+			URL:    key,
+			Output: filepath.Base(key.Path) + ".asc",
+		}
+		h.Group = a.Group
+		frm := codecomet.From(h)
+		var md uint32
+		md = 0444
+		dd := llb.Scratch().
+			File(llb.Mkdir("/etc/apt/trusted.gpg.d", 0755, llb.WithParents(true)), ll...).
+			File(llb.Copy(frm, "/"+filepath.Base(key.Path)+".asc", "/etc/apt/trusted.gpg.d/", &llb.CopyInfo{
+				Mode: (*os.FileMode)(&md),
+			}), ll...)
+
+		mergees = append(mergees, dd)
+	}
+
+	a.State = llb.Merge(mergees, ll...)
+}
+
 func (a *AptGet) AddArchitecture(platforms []*platform.Platform) {
 	archs := []string{}
 	for _, v := range platforms {
@@ -115,24 +150,18 @@ func (a *AptGet) Do(some []string) {
 	a.Bash.Run(name, a.wrap(com)...)
 }
 
-func (a *AptGet) Install(packages interface{}) {
+func (a *AptGet) Install(packages ...interface{}) {
 	var ipac []string
 
-	switch v := packages.(type) {
-	case []*Package:
-		for _, vv := range v {
-			ipac = append(ipac, vv.toString())
+	for _, pck := range packages {
+		switch v := pck.(type) {
+		case *Package:
+			ipac = append(ipac, v.toString())
+		case string:
+			ipac = append(ipac, v)
+		default:
+			log.Fatal().Msgf("invalid packages type %s", v)
 		}
-	case *Package:
-		ipac = append(ipac, v.toString())
-	case []string:
-		for _, vv := range v {
-			ipac = append(ipac, vv)
-		}
-	case string:
-		ipac = append(ipac, v)
-	default:
-		log.Fatal().Msgf("invalid packages type %s", v)
 	}
 
 	sort.Strings(ipac)
