@@ -108,6 +108,54 @@ func pack(sdkPath string, sdkVersion Version) llb.State {
 	return bsh.Mount["/output"].Source
 }
 
+func buildSignTool(grp *wrapllb.Group, debianVersion debian.Version, plt *platform.Platform) llb.State {
+	// Get Sigtool (MIT license)
+	git := codecomet.From((&codecomet.Git{
+		Reference: "c6242cb29c412168f771e97d75417e55af6cdb2e",
+	}).Parse("https://github.com/thefloweringash/sigtool.git"))
+
+	toolingImage := base.Debian(debianVersion, plt)
+	toolingImage = c.Add(toolingImage, []*platform.Platform{
+		plt, // platform.DefaultPlatform,
+	})
+
+	packages := []interface{}{
+		"libssl-dev",
+	}
+
+	aptget := apt.New(toolingImage)
+	aptget.Group = grp
+	aptget.Install(packages...)
+
+	bsh := bash.New(aptget.State)
+	bsh.Group = grp
+	bsh.ReadOnly = true
+	bsh.Dir = "/codecomet"
+
+	bsh.Mount["/input"] = &wrapllb.State{
+		NoOutput: true,
+		Source:   git,
+	}
+
+	bsh.Mount["/opt/macosxcross/bin"] = &wrapllb.State{
+		Source: llb.Scratch().File(llb.Mkdir("/opt/macosxcross/bin", 0755, llb.WithParents(true))),
+		Path:   "/opt/macosxcross/bin",
+	}
+
+	bsh.Run("Building signtool", `
+		cmake /input
+		make
+		# XXX hold on your hat cowboy
+		cp sigtool /opt/macosxcross/bin
+		cp codesign /opt/macosxcross/bin
+		cp libsigtool.so /opt/macosxcross/bin
+		cd /opt/macosxcross/bin
+		ln -s x86_64-apple-darwin22.2-codesign_allocate codesign_allocate
+	`)
+
+	return bsh.Mount["/opt/macosxcross/bin"].Source
+}
+
 // Need a C state
 func Add(sdkPath string, sdkVersion Version, debianVersion debian.Version, llvmVersion llvm.Version, plt *platform.Platform) llb.State {
 	grp := &wrapllb.Group{
@@ -118,6 +166,7 @@ func Add(sdkPath string, sdkVersion Version, debianVersion debian.Version, llvmV
 	sdkState := pack(sdkPath, sdkVersion)
 
 	// Get the source
+	// GPL 2 license
 	git := codecomet.From((&codecomet.Git{
 		Reference: osxCrossVersion,
 	}).Parse("https://github.com/tpoechtrager/osxcross.git"))
@@ -130,7 +179,9 @@ func Add(sdkPath string, sdkVersion Version, debianVersion debian.Version, llvmV
 	// The build version
 	toolingImage := base.Debian(debianVersion, plt)
 	toolingImage = c.Add(toolingImage, []*platform.Platform{
-		platform.DefaultPlatform,
+		// XXXXXX this is... concerning...
+		// platform.DefaultPlatform,
+		plt,
 	})
 	toolingImage = llvm.Add(toolingImage, debianVersion, llvmVersion)
 
@@ -199,7 +250,9 @@ func Add(sdkPath string, sdkVersion Version, debianVersion debian.Version, llvmV
 		"$SOURCE_DIR"/build.sh
 	`)
 
-	return bsh.Mount["/opt/macosxcross"].Source
+	codesign := buildSignTool(grp, debianVersion, plt)
+
+	return llb.Merge([]llb.State{bsh.Mount["/opt/macosxcross"].Source, codesign})
 }
 
 // "LDFLAGS":    "",

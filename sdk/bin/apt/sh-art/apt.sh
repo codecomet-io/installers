@@ -118,33 +118,46 @@ cc::apt_get::do(){
 
 # XXX what if sources are being modified, or config, or something else that materially impacts update?
 cc::high::update(){
-  # [ -e "$_cc_apt_list_local_location"/.cc_updated ] || time cc::apt_get::update -qq
-  time cc::apt_get::update -qq
+  [ "$_CC_PRIVATE_LOGGER_LEVEL" == "$CC_LOGGER_DEBUG" ] || args=("-qq")
+  # [ -e "$_cc_apt_list_local_location"/.cc_updated ] || time cc::apt_get::update "$nooutput"
+
+  args+=("$@")
+  time cc::apt_get::update "${args[@]}"
 }
 
 cc::high::install(){
+  local args=()
+  [ "$_CC_PRIVATE_LOGGER_LEVEL" == "$CC_LOGGER_DEBUG" ] || args=("-qq")
   # Do have a marker indicating that the lists has been kept around?
   # If not, then force update
-  [ -e "$_cc_apt_list_local_location"/.cc_updated ] || time cc::apt_get::update -qq
+  [ -e "$_cc_apt_list_local_location"/.cc_updated ] || time cc::apt_get::update "${args[@]}"
 
-  time cc::apt_get::do install -qq "$@"
+  args+=("$@")
+  time cc::apt_get::do install "${args[@]}"
 }
 
 cc::high::upgrade(){
+  local args=()
+  [ "$_CC_PRIVATE_LOGGER_LEVEL" == "$CC_LOGGER_DEBUG" ] || args=("-qq")
   # Do have a marker indicating that the lists have been kept around?
   # If not, then force update
-  [ -e "$_cc_apt_list_local_location"/.cc_updated ] || time cc::apt_get::update -qq
+  [ -e "$_cc_apt_list_local_location"/.cc_updated ] || time cc::apt_get::update "${args[@]}"
 
   # ls -lAR "$_cc_tmpfs_location"/packs || true
-  # time cc::apt_get::do upgrade -qq "$@"
+  # time cc::apt_get::do upgrade "$nooutput" "$@"
 
   # XXX WIP here
   # Bust cache - delete this
-  #time cc::apt_get::do upgrade --download-only -qq "$@"
-  #time cc::apt_get::do upgrade --no-download -qq "$@"
-  time cc::apt_get::do upgrade -qq "$@"
+  #time cc::apt_get::do upgrade --download-only "$nooutput" "$@"
+  #time cc::apt_get::do upgrade --no-download "$nooutput" "$@"
+  args+=("$@")
+  time cc::apt_get::do upgrade "${args[@]}"
 }
 
 cc::high::purge(){
-  time cc::apt_get::do purge -qq --auto-remove "$@"
+  local args=()
+  [ "$_CC_PRIVATE_LOGGER_LEVEL" == "$CC_LOGGER_DEBUG" ] || args=("-qq")
+
+  args+=("$@")
+  time cc::apt_get::do purge --auto-remove "${args[@]}"
 }
