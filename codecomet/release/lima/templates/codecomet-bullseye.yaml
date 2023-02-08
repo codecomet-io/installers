@@ -1,0 +1,73 @@
+# Right now cannot make vz work https://github.com/lima-vm/lima/issues/1200
+# vmType: "vz"
+vmType: "qemu"
+images:
+  - location: "https://cloud.debian.org/images/cloud/bullseye/20230124-1270/debian-11-generic-amd64-20230124-1270.qcow2"
+    arch: "x86_64"
+    digest: "sha512:fa152c6159dcb73adb1b573da3631937068c6a465ce7565a16dcce7aebd27c9a62ad783296d408300b99616cad89b8c0092e11df0fc2aa423334d741ac83b1a2"
+  - location: "https://cloud.debian.org/images/cloud/bullseye/20230124-1270/debian-11-generic-arm64-20230124-1270.qcow2"
+    arch: "aarch64"
+    digest: "sha512:d714ed2b70322bb2c4adc588f96671192a5ca67f70e20c3fb51c89d55b6a9646f00a6e6f0e5da241b7017916bb19b65a5703a1e3b3869a89c0da7047ac6c4e53"
+
+containerd:
+  system: true
+  user: false
+
+portForwards:
+  - guestSocket: "/run/buildkit/buildkitd.sock"
+    hostSocket: "{{.Dir}}/sock/buildkitd.sock"
+  - guestPort: 443
+    hostIP: "0.0.0.0"
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      export DEBIAN_FRONTEND=noninteractive
+
+      # Install git
+      apt-get update
+      apt-get install -y git
+
+      ## Create the patch
+      cat <<-EOF >/patch
+      --- /etc/systemd/system/multi-user.target.wants/buildkit.service_original	2022-09-02 03:59:06.444960735 +0000
+      +++ /etc/systemd/system/multi-user.target.wants/buildkit.service	2022-09-02 04:03:37.697167474 +0000
+      @@ -20,6 +20,7 @@
+       [Service]
+       ExecStartPre=-/sbin/modprobe overlay
+       ExecStart=/usr/local/bin/buildkitd
+      +ExecStartPost=/perm_fix
+      
+       Type=notify
+       Delegate=yes
+      EOF
+
+      # And patch in place
+      patch /usr/local/lib/systemd/system/buildkit.service /patch
+
+      # Enable multi architecture support
+      # TODO parameterize and own this
+      nerdctl run --privileged --rm "tonistiigi/binfmt:qemu-v6.2.0" --install all
+
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eux -o pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      # Create the fix permissions script
+      sudo tee "/perm_fix" > /dev/null <<-EOF
+      #!/usr/bin/env bash
+      chown -R root:$(whoami) /run/buildkit
+      EOF
+      sudo chmod u+x /perm_fix
+      sudo chmod go-rwx /perm_fix
+      # Now bounce that shite
+      sudo systemctl daemon-reload
+      sudo systemctl restart buildkit
+
+# TODO parameterize this and allow people to control it? or max it out and use buildkit limits?
+cpus: 4
+memory: 16GiB
+disk: 256GiB
