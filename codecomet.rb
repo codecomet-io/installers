@@ -5,14 +5,18 @@ class Codecomet < Formula
   head "https://github.com/codecomet-io/installers.git", branch: "master"
 
   depends_on "qemu"
+  # XXX temporary until we reimplement a better solution
+  depends_on "socat"
 
   def install
-    arch = "arm64"
     platform = "darwin"
+    arch = "universal"
 
-    on_intel do
-      arch = "amd64"
-    end
+    #arch = "arm64"
+    #on_intel do
+    #  arch = "amd64"
+    #end
+
     bin.install Dir["release/mark-I/darwin/#{arch}/bin/*"]
     share.install Dir["release/mark-I/darwin/#{arch}/share/*"]
 
