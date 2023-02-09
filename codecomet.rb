@@ -8,6 +8,16 @@ class Codecomet < Formula
   # XXX temporary until we reimplement a better solution
   depends_on "socat"
 
+  # Should stop depending on this as well
+  depends_on "graphviz"
+
+  # Right now, yeah, go sdk
+  depends_on "go"
+
+  # Ease debugging
+  depends_on "jq"
+
+
   def install
     platform = "darwin"
     arch = "universal"
