@@ -2,13 +2,13 @@ package main
 
 import (
 	"fmt"
-	"github.com/codecomet-io/go-sdk/base"
 	"github.com/codecomet-io/go-sdk/base/debian"
 	"github.com/codecomet-io/go-sdk/base/llvm"
 	"github.com/codecomet-io/go-sdk/base/node"
 	"github.com/codecomet-io/go-sdk/codecomet"
+	"github.com/codecomet-io/go-sdk/codecomet/core"
 	"github.com/codecomet-io/go-sdk/controller"
-	"github.com/codecomet-io/go-sdk/coretypes"
+	"github.com/codecomet-io/go-sdk/root"
 	"github.com/moby/buildkit/client/llb"
 )
 
@@ -27,32 +27,32 @@ var (
 	supportedTargets = []*Target{
 		{
 			NodeVersion:  node.Node19,
-			Platform:     coretypes.LinuxArm64,
+			Platform:     codecomet.LinuxArm64,
 			NodeChecksum: node.Node19DigestArm64,
 		},
 		{
 			NodeVersion:  node.Node19,
-			Platform:     coretypes.LinuxAmd64,
+			Platform:     codecomet.LinuxAmd64,
 			NodeChecksum: node.Node19DigestAmd64,
 		},
 		{
 			NodeVersion:  node.Node19,
-			Platform:     coretypes.LinuxArmV7,
+			Platform:     codecomet.LinuxArmV7,
 			NodeChecksum: node.Node19DigestArm7,
 		},
 		{
 			NodeVersion:  node.Node18,
-			Platform:     coretypes.LinuxArm64,
+			Platform:     codecomet.LinuxArm64,
 			NodeChecksum: node.Node18DigestArm64,
 		},
 		{
 			NodeVersion:  node.Node18,
-			Platform:     coretypes.LinuxAmd64,
+			Platform:     codecomet.LinuxAmd64,
 			NodeChecksum: node.Node18DigestAmd64,
 		},
 		{
 			NodeVersion:  node.Node18,
-			Platform:     coretypes.LinuxArmV7,
+			Platform:     codecomet.LinuxArmV7,
 			NodeChecksum: node.Node18DigestArm7,
 		},
 	}
@@ -60,8 +60,8 @@ var (
 
 type Target struct {
 	NodeVersion  node.Version
-	NodeChecksum coretypes.Digest
-	Platform     *coretypes.Platform
+	NodeChecksum core.Digest
+	Platform     *codecomet.Platform
 }
 
 /*
@@ -84,7 +84,7 @@ func main() {
 			for _, target := range supportedTargets {
 				build(target.NodeVersion, target.NodeChecksum, debVersion, llvmVersion, false, target.Platform)
 				// No c variant on armhf
-				if target.Platform != coretypes.LinuxArmV7 {
+				if target.Platform != codecomet.LinuxArmV7 {
 					build(target.NodeVersion, target.NodeChecksum, debVersion, llvmVersion, true, target.Platform)
 				}
 			}
@@ -92,19 +92,19 @@ func main() {
 	}
 }
 
-func build(nodeVersion node.Version, nodeChecksum coretypes.Digest, debianVersion debian.Version, llvmVersion llvm.Version, withC bool, plt *coretypes.Platform) {
-	codecomet.Init()
+func build(nodeVersion node.Version, nodeChecksum core.Digest, debianVersion debian.Version, llvmVersion llvm.Version, withC bool, plt *codecomet.Platform) {
+	controller.Init()
 
 	c := ""
 
 	var bb llb.State
-	bb = base.Debian(debianVersion, plt)
+	bb = root.Debian(debianVersion, plt).GetInternalState()
 	if withC {
 		c = "-c"
-		bb = base.C(debianVersion, llvmVersion, false, plt)
+		bb = root.C(debianVersion, llvmVersion, false, plt).GetInternalState()
 	}
 
-	outx := llb.Merge([]llb.State{bb, node.Add(nodeVersion, nodeChecksum, plt)})
+	outx := node.Overlay(fileset.New().Adopt(bb), nodeVersion, nodeChecksum, plt).GetInternalState()
 
 	tag := fmt.Sprintf("%s-%s%s-%s", debianVersion, nodeVersion, c, plt.Architecture+plt.Variant)
 

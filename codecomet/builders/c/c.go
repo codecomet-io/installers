@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/codecomet-io/go-sdk/base"
 	"github.com/codecomet-io/go-sdk/base/c"
 	"github.com/codecomet-io/go-sdk/base/debian"
 	"github.com/codecomet-io/go-sdk/base/llvm"
@@ -10,8 +9,7 @@ import (
 	"github.com/codecomet-io/go-sdk/bin/bash"
 	"github.com/codecomet-io/go-sdk/codecomet"
 	"github.com/codecomet-io/go-sdk/controller"
-	"github.com/codecomet-io/go-sdk/coretypes"
-	"github.com/moby/buildkit/client/llb"
+	"github.com/codecomet-io/go-sdk/root"
 )
 
 const (
@@ -29,9 +27,9 @@ var (
 		// debian.Buster,
 	}
 	// Platforms we build
-	supportedPlatforms = []*coretypes.Platform{
-		coretypes.LinuxArm64,
-		coretypes.LinuxAmd64,
+	supportedPlatforms = []*codecomet.Platform{
+		codecomet.LinuxArm64,
+		codecomet.LinuxAmd64,
 	}
 	// Versions of LLVM we build
 	supportedLLVM = []llvm.Version{
@@ -41,10 +39,10 @@ var (
 	}
 
 	// Platforms we can cross compile to
-	supportedTargetPlatforms = []*coretypes.Platform{
-		coretypes.LinuxAmd64,
-		coretypes.LinuxArm64,
-		coretypes.LinuxArmV7,
+	supportedTargetPlatforms = []*codecomet.Platform{
+		codecomet.LinuxAmd64,
+		codecomet.LinuxArm64,
+		codecomet.LinuxArmV7,
 	}
 )
 
@@ -65,11 +63,11 @@ func main() {
 	}
 }
 
-func build(debianVersion debian.Version, llvmVersion llvm.Version, withMacOS bool, plt *coretypes.Platform) {
-	codecomet.Init()
+func build(debianVersion debian.Version, llvmVersion llvm.Version, withMacOS bool, plt *codecomet.Platform) {
+	controller.Init()
 
 	// Get the requested Debian
-	state := base.Debian(debianVersion, plt)
+	state := root.Debian(debianVersion, plt).GetInternalState()
 
 	// Add basic C stuff
 	state = c.Add(state, supportedTargetPlatforms)
@@ -95,7 +93,7 @@ func build(debianVersion debian.Version, llvmVersion llvm.Version, withMacOS boo
 		// Now, we can pack
 		mt := macos.Add("/Applications/Xcode.app", macos.V13_1, debianVersion, llvmVersion, plt)
 		// And merge the toolkit in
-		state = llb.Merge([]llb.State{bsh.State, mt})
+		state = fileset.Merge([]codecomet.FileSet{fileset.New().Adopt(bsh.State), fileset.New().Adopt(mt)}, &codecomet.Nameable{}).GetInternalState()
 		withMac = "-macos"
 	}
 

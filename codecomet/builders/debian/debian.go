@@ -6,8 +6,6 @@ import (
 	"github.com/codecomet-io/go-sdk/bin/apt"
 	"github.com/codecomet-io/go-sdk/codecomet"
 	"github.com/codecomet-io/go-sdk/controller"
-	"github.com/codecomet-io/go-sdk/coretypes"
-	"github.com/moby/buildkit/client/llb"
 )
 
 const (
@@ -22,10 +20,10 @@ var (
 		debian.Bookworm,
 		debian.Sid,
 	}
-	supportedPlatforms = []*coretypes.Platform{
-		coretypes.LinuxAmd64,
-		coretypes.LinuxArm64,
-		coretypes.LinuxArmV7,
+	supportedPlatforms = []*codecomet.Platform{
+		codecomet.LinuxAmd64,
+		codecomet.LinuxArm64,
+		codecomet.LinuxArmV7,
 	}
 )
 
@@ -37,10 +35,22 @@ func main() {
 	}
 }
 
-func build(debianVersion debian.Version, plt *coretypes.Platform) {
-	codecomet.Init()
+func build(debianVersion debian.Version, plt *codecomet.Platform) {
+	controller.Init()
 
-	outx := b(debianVersion, plt)
+	deb := (&codecomet.Image{
+		Registry: "docker.io",
+		Owner:    "library",
+		Name:     "debian",
+		Tag:      string(debianVersion) + "-slim",
+		Platform: plt,
+	})
+
+	ap := apt.New(deb.GetInternalState())
+	// add eatmydata to speed things up and socat to ease debugging out (XXX should not be in runtime images though...)
+	ap.Install("eatmydata", "socat", "nano")
+
+	outx := ap.State
 
 	controller.Get().Exporter = &controller.Export{
 		// Oci: "oci-tester/exp.tar",
@@ -50,20 +60,4 @@ func build(debianVersion debian.Version, plt *coretypes.Platform) {
 	}
 
 	controller.Get().Do(outx)
-}
-
-func b(debianVersion debian.Version, plt *coretypes.Platform) llb.State {
-	deb := codecomet.From(&codecomet.Image{
-		Registry: "docker.io",
-		Owner:    "library",
-		Name:     "debian",
-		Tag:      string(debianVersion) + "-slim",
-		Platform: plt,
-	})
-
-	ap := apt.New(deb)
-	// add eatmydata to speed things up and socat to ease debugging out (XXX should not be in runtime images though...)
-	ap.Install("eatmydata", "socat")
-
-	return ap.State
 }

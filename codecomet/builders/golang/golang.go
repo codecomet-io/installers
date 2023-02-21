@@ -2,14 +2,15 @@ package main
 
 import (
 	"fmt"
-	"github.com/codecomet-io/go-sdk/base"
 	"github.com/codecomet-io/go-sdk/base/debian"
 	"github.com/codecomet-io/go-sdk/base/golang"
 	"github.com/codecomet-io/go-sdk/base/llvm"
 	"github.com/codecomet-io/go-sdk/base/vcs"
 	"github.com/codecomet-io/go-sdk/codecomet"
+	"github.com/codecomet-io/go-sdk/codecomet/core"
 	"github.com/codecomet-io/go-sdk/controller"
-	"github.com/codecomet-io/go-sdk/coretypes"
+	"github.com/codecomet-io/go-sdk/fileset"
+	"github.com/codecomet-io/go-sdk/root"
 	"github.com/moby/buildkit/client/llb"
 )
 
@@ -25,9 +26,9 @@ var (
 	}
 	// Platforms we build
 	/*
-		supportedPlatforms = []*coretypes.Platform{
-			coretypes.LinuxArm64,
-			coretypes.LinuxAmd64,
+		supportedPlatforms = []*codecomet.Platform{
+			codecomet.LinuxArm64,
+			codecomet.LinuxAmd64,
 		}
 
 	*/
@@ -39,32 +40,32 @@ var (
 	supportedTargets = []*Target{
 		{
 			GoVersion:  golang.Go1_20,
-			Platform:   coretypes.LinuxArm64,
+			Platform:   codecomet.LinuxArm64,
 			GoChecksum: golang.Go1_20DigestArm64,
 		},
 		{
 			GoVersion:  golang.Go1_19,
-			Platform:   coretypes.LinuxArm64,
+			Platform:   codecomet.LinuxArm64,
 			GoChecksum: golang.Go1_19DigestArm64,
 		},
 		{
 			GoVersion:  golang.Go1_18,
-			Platform:   coretypes.LinuxArm64,
+			Platform:   codecomet.LinuxArm64,
 			GoChecksum: golang.Go1_18DigestArm64,
 		},
 		{
 			GoVersion:  golang.Go1_20,
-			Platform:   coretypes.LinuxAmd64,
+			Platform:   codecomet.LinuxAmd64,
 			GoChecksum: golang.Go1_20DigestAmd64,
 		},
 		{
 			GoVersion:  golang.Go1_19,
-			Platform:   coretypes.LinuxAmd64,
+			Platform:   codecomet.LinuxAmd64,
 			GoChecksum: golang.Go1_19DigestAmd64,
 		},
 		{
 			GoVersion:  golang.Go1_18,
-			Platform:   coretypes.LinuxAmd64,
+			Platform:   codecomet.LinuxAmd64,
 			GoChecksum: golang.Go1_18DigestAmd64,
 		},
 	}
@@ -72,8 +73,8 @@ var (
 
 type Target struct {
 	GoVersion  golang.Version
-	GoChecksum coretypes.Digest
-	Platform   *coretypes.Platform
+	GoChecksum core.Digest
+	Platform   *codecomet.Platform
 }
 
 /*
@@ -114,24 +115,27 @@ func main() {
 	}
 }
 
-func build(goVersion golang.Version, goChecksum coretypes.Digest, debianVersion debian.Version, llvmVersion llvm.Version, withCGO bool, withMacOS bool, plt *coretypes.Platform) {
-	codecomet.Init()
+func build(goVersion golang.Version, goChecksum core.Digest, debianVersion debian.Version, llvmVersion llvm.Version, withCGO bool, withMacOS bool, plt *codecomet.Platform) {
+	controller.Init()
 
 	cgo := ""
 	mac := ""
 
 	var bb llb.State
-	bb = base.Debian(debianVersion, plt)
+	bb = root.Debian(debianVersion, plt).GetInternalState()
 	if withCGO {
 		cgo = "-cgo"
-		bb = base.C(debianVersion, llvmVersion, withMacOS, plt)
+		bb = root.C(debianVersion, llvmVersion, withMacOS, plt).GetInternalState()
 	}
 	if withMacOS {
 		mac = "-macos"
 	}
 	bb = vcs.Add(bb)
 
-	outx := llb.Merge([]llb.State{bb, golang.Add(goVersion, goChecksum, plt)})
+	outx := fileset.Merge([]codecomet.FileSet{
+		fileset.New().Adopt(bb),
+		fileset.New().Adopt(golang.Add(goVersion, goChecksum, plt)),
+	}, &codecomet.MergeOptions{}).GetInternalState()
 
 	tag := fmt.Sprintf("%s-%s%s%s-%s", debianVersion, goVersion, cgo, mac, plt.Architecture+plt.Variant)
 
@@ -147,10 +151,10 @@ func build(goVersion golang.Version, goChecksum coretypes.Digest, debianVersion 
 // osxbuilda.WithImageConfig()
 // maybe on the exporter exptypes.ExporterImageConfigKey: string(bboxConfig), ?
 /*
-	func buildGo(debianVersion debian.Version, sdkPath string, goVersion golang.Version, osxCrossVersion string, plt *coretypes.Platform) llb.State {
-		osxbuilda = codecomet.Execute(osxbuilda, &codecomet.Exec{
-			Base: codecomet.Base{
-				Group: &coretypes.Group{
+	func buildGo(debianVersion debian.Version, sdkPath string, goVersion golang.Version, osxCrossVersion string, plt *codecomet.Platform) llb.State {
+		osxbuilda = codecomet.Execute(osxbuilda, &legacy.Exec{
+			Action: codecomet.Action{
+				Group: &core.Group{
 					DoNotDisplay: true,
 				},
 			},

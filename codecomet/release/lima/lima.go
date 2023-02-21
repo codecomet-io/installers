@@ -7,9 +7,9 @@ import (
 	golang2 "github.com/codecomet-io/go-sdk/base/golang"
 	"github.com/codecomet-io/go-sdk/bin/golang"
 	"github.com/codecomet-io/go-sdk/codecomet"
+	"github.com/codecomet-io/go-sdk/codecomet/wrap"
 	"github.com/codecomet-io/go-sdk/controller"
-	"github.com/codecomet-io/go-sdk/coretypes"
-	"github.com/codecomet-io/go-sdk/wrapllb"
+	"github.com/codecomet-io/go-sdk/fileset"
 	"github.com/moby/buildkit/client/llb"
 )
 
@@ -19,14 +19,16 @@ var vmtpl string
 //go:embed entitlements/lima.plist
 var entitl string
 
+//go:embed patches/share_path.patch
+var share_patch string
+
 func main() {
-	codecomet.Init()
+	controller.Init()
 
 	// XXX this is largely incorrect - these are GoLang platforms, not OCI
 	// XXX Geez hard coded host path dammmmmm
 	outx := build()
 
-	// output = wrapllb.Copy(upstream, "/dist/*", output, "/", &wrapllb.CopyOptions{})
 	controller.Get().Exporter = &controller.Export{
 		Local: "release/mark-I", // os.Args[2],
 		// Oci: "oci-tester/exp.tar",
@@ -35,27 +37,27 @@ func main() {
 	controller.Get().Do(outx)
 }
 
-func buildone(source llb.State, repo string, version string, entitlements string, v *coretypes.Platform) llb.State {
+func buildone(src codecomet.FileSet, repo string, version string, entitlements string, v *codecomet.Platform) llb.State {
 
-	ent := codecomet.From(&codecomet.Scratch{}).File(llb.Mkfile("entitlements.plist", 0400, []byte(entitlements)))
+	ent := fileset.File("entitlements.plist", []byte(entitlements), 0400)
 
-	outy := codecomet.From(&codecomet.Scratch{})
+	destination := fileset.New()
+	destination.MkDir("/bin", &codecomet.MkdirOptions{
+		Mode: 0700,
+	})
+	destination.MkDir("/share/codecomet/examples", &codecomet.MkdirOptions{
+		Mode: 0700,
+	})
+	destination.AddFile("/share/codecomet/examples/codecomet-bullseye.yaml", []byte(vmtpl), &codecomet.AddFileOptions{
+		Mode: 0600,
+	})
+
 	glg := golang.New(debian.Bullseye, golang2.Go1_19, true, true)
-	glg.Source = source
+	glg.Source = src.GetInternalState()
+	glg.Destination = destination.GetInternalState()
 
-	glg.Destination = glg.Destination.
-		File(llb.Mkdir("/bin", 0700)).
-		File(llb.Mkdir("/share/lima/examples", 0700, llb.WithParents(true))).
-		File(llb.Mkfile("/share/lima/examples/codecomet-bullseye.yaml", 0600, []byte(vmtpl)))
 	// These are mere shell wrapping a call to limactl
-	// File(llb.Copy(glg.Source, "/cmd/lima", "/bin", &llb.CopyInfo{})).
-	// File(llb.Copy(glg.Source, "/cmd/nerdctl.lima", "/bin", &llb.CopyInfo{})).
-	// apptainer
-	// docker
-	// lima
-	// podman
 	// symlinking TBD
-	// File(llb.Mkfile("/share/lima/examples/default.yaml", fs.ModeSymlink|0600, []byte("codecomet-bullseye.yaml"), &llb.MkfileInfo{}))
 
 	glg.Env["DESTINATION"] = "/output"
 	glg.Env["LIMA_ROOT"] = "/input"
@@ -66,20 +68,20 @@ func buildone(source llb.State, repo string, version string, entitlements string
 	glg.Env["MACOSX_DEPLOYMENT_TARGET"] = "13.0"
 
 	glg.Do(`
-		ln -s codecomet-bullseye.yaml "$DESTINATION"/share/lima/examples/default.yaml
+		# ln -s codecomet-bullseye.yaml "$DESTINATION"/share/lima/examples/default.yaml
+		ln -s codecomet-bullseye.yaml "$DESTINATION"/share/codecomet/examples/default.yaml
 	`)
 
 	glg.Config.Target.GOOS = golang.Linux
 	glg.Config.Target.GOARCH = golang.Amd64
+
 	glg.Do(`
-		cd "$LIMA_ROOT"
-		go build -ldflags="-s -w -X "$PACKAGE"/pkg/version.Version=$VERSION" -o "$DESTINATION"/share/lima/lima-guestagent.Linux-x86_64 ./cmd/lima-guestagent
+		go build -ldflags="-s -w -X "$PACKAGE"/pkg/version.Version=$VERSION" -o "$DESTINATION"/share/codecomet/guestagent.Linux-x86_64 ./cmd/lima-guestagent
 	`)
 
 	glg.Config.Target.GOARCH = golang.Arm64
 	glg.Do(`
-		cd "$LIMA_ROOT"
-		go build -ldflags="-s -w -X "$PACKAGE"/pkg/version.Version=$VERSION" -o "$DESTINATION"/share/lima/lima-guestagent.Linux-aarch64 ./cmd/lima-guestagent
+		go build -ldflags="-s -w -X "$PACKAGE"/pkg/version.Version=$VERSION" -o "$DESTINATION"/share/codecomet/guestagent.Linux-aarch64 ./cmd/lima-guestagent
 	`)
 
 	// Now, lima needs CGO is required for the build
@@ -90,23 +92,21 @@ func buildone(source llb.State, repo string, version string, entitlements string
 
 	tarch := v.Architecture
 
-	if v == coretypes.DarwinUniversal {
-		tarch = coretypes.Universal
+	if v == codecomet.DarwinUniversal {
+		tarch = codecomet.ArchUniversal
 
 		glg.Config.Target.GOARCH = golang.Amd64
 		glg.Do(`
-			cd "$LIMA_ROOT"
 			go build -v -ldflags="-X "$PACKAGE"/pkg/version.Version=$VERSION" -o "$DESTINATION"/bin/limactl_amd64 ./cmd/limactl
 		`)
 
 		glg.Config.Target.GOARCH = golang.Arm64
 		glg.Do(`
-			cd "$LIMA_ROOT"
 			go build -v -ldflags="-X "$PACKAGE"/pkg/version.Version=$VERSION" -o "$DESTINATION"/bin/limactl_arm64 ./cmd/limactl
 		`)
 
-		glg.Mount["/sign"] = &wrapllb.State{
-			Source: ent,
+		glg.Mount["/sign"] = &wrap.State{
+			Source: ent.GetInternalState(),
 		}
 
 		glg.Do(`
@@ -118,31 +118,27 @@ func buildone(source llb.State, repo string, version string, entitlements string
 		glg.Config.Target.GOOS = golang.GoOS(v.OS)
 		glg.Config.Target.GOARCH = golang.GoArch(v.Architecture)
 		glg.Do(`
-			cd "$LIMA_ROOT"
 			go build -v -ldflags="-X "$PACKAGE"/pkg/version.Version=$VERSION" -o "$DESTINATION"/bin/codecomet.upstream.limactl ./cmd/limactl
 		`)
-
 	}
 
-	return outy.File(llb.Copy(glg.Destination, "/", "/"+v.OS+"/"+tarch, &llb.CopyInfo{
-		CreateDestPath: true,
-	}))
+	return fileset.Copy(fileset.New().Adopt(glg.Destination), "/", fileset.New(), "/"+v.OS+"/"+tarch, &codecomet.CopyOptions{}).GetInternalState()
+
 }
 
 func build() llb.State {
 	repo := "github.com/lima-vm/lima"
 	version := "v0.14.2"
 
-	source := codecomet.From((&codecomet.Git{
-		Reference:  version,
-		KeepGitDir: true,
-	}).Parse(fmt.Sprintf("https://%s.git", repo)))
+	gits := fileset.Git(fmt.Sprintf("https://%s.git", repo))
+	gits.Reference = version
+	gits.KeepGitDir = true
+	gits.Patch([]string{share_patch}, &codecomet.PatchOptions{})
 
-	outx := []llb.State{
-		buildone(source, repo, version, entitl, coretypes.LinuxArm64),
-		buildone(source, repo, version, entitl, coretypes.LinuxAmd64),
-		buildone(source, repo, version, entitl, coretypes.DarwinUniversal),
-	}
+	return fileset.Merge([]codecomet.FileSet{
+		fileset.New().Adopt(buildone(gits, repo, version, entitl, codecomet.LinuxArm64)),
+		fileset.New().Adopt(buildone(gits, repo, version, entitl, codecomet.LinuxAmd64)),
+		fileset.New().Adopt(buildone(gits, repo, version, entitl, codecomet.DarwinUniversal)),
+	}, &codecomet.MergeOptions{}).GetInternalState()
 
-	return llb.Merge(outx)
 }

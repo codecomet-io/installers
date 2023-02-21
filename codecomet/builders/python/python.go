@@ -2,14 +2,12 @@ package main
 
 import (
 	"fmt"
-	"github.com/codecomet-io/go-sdk/base"
 	"github.com/codecomet-io/go-sdk/base/debian"
 	"github.com/codecomet-io/go-sdk/base/llvm"
 	"github.com/codecomet-io/go-sdk/bin/apt"
 	"github.com/codecomet-io/go-sdk/codecomet"
 	"github.com/codecomet-io/go-sdk/controller"
-	"github.com/codecomet-io/go-sdk/coretypes"
-	"github.com/moby/buildkit/client/llb"
+	"github.com/codecomet-io/go-sdk/root"
 )
 
 var (
@@ -21,10 +19,10 @@ var (
 		debian.Bullseye,
 		debian.Sid,
 	}
-	supportedPlatforms = []*coretypes.Platform{
-		coretypes.LinuxArm64,
-		coretypes.LinuxAmd64,
-		coretypes.LinuxArmV7,
+	supportedPlatforms = []*codecomet.Platform{
+		codecomet.LinuxArm64,
+		codecomet.LinuxAmd64,
+		codecomet.LinuxArmV7,
 	}
 )
 
@@ -34,7 +32,7 @@ func main() {
 			for _, target := range supportedPlatforms {
 				build(debVersion, llvmVersion, false, target)
 				// No c variant on armhf
-				if target != coretypes.LinuxArmV7 {
+				if target != codecomet.LinuxArmV7 {
 					build(debVersion, llvmVersion, true, target)
 				}
 			}
@@ -42,19 +40,17 @@ func main() {
 	}
 }
 
-func build(debianVersion debian.Version, llvmVersion llvm.Version, withC bool, plt *coretypes.Platform) {
-	codecomet.Init()
+func build(debianVersion debian.Version, llvmVersion llvm.Version, withC bool, plt *codecomet.Platform) {
+	controller.Init()
 
 	c := ""
-
-	var bb llb.State
-	bb = base.Debian(debianVersion, plt)
+	bb := root.Debian(debianVersion, plt)
 	if withC {
 		c = "-c"
-		bb = base.C(debianVersion, llvmVersion, false, plt)
+		bb = root.C(debianVersion, llvmVersion, false, plt)
 	}
 
-	ag := apt.New(bb)
+	ag := apt.New(bb.GetInternalState())
 	ag.Install("python3", "python3-pip", "python3-venv")
 	outx := ag.State
 

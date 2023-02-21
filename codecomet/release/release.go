@@ -3,18 +3,16 @@ package main
 import (
 	_ "embed"
 	"fmt"
-	"github.com/codecomet-io/go-sdk/base"
 	"github.com/codecomet-io/go-sdk/base/debian"
 	golang2 "github.com/codecomet-io/go-sdk/base/golang"
 	"github.com/codecomet-io/go-sdk/base/llvm"
 	"github.com/codecomet-io/go-sdk/bin/bash"
 	"github.com/codecomet-io/go-sdk/bin/golang"
-	"github.com/codecomet-io/go-sdk/bin/patch"
 	"github.com/codecomet-io/go-sdk/codecomet"
+	"github.com/codecomet-io/go-sdk/codecomet/wrap"
 	"github.com/codecomet-io/go-sdk/controller"
-	"github.com/codecomet-io/go-sdk/coretypes"
-	"github.com/codecomet-io/go-sdk/wrapllb"
-	"github.com/moby/buildkit/client/llb"
+	"github.com/codecomet-io/go-sdk/fileset"
+	"github.com/codecomet-io/go-sdk/root"
 )
 
 /*
@@ -26,18 +24,18 @@ Components therefore should NOT be plans.
 // osxbuilda = osxbuilda.AddEnv("CXXFLAGS", "-Werror=implicit-function-declaration -Werror=format-security -Wall -O3 -grecord-gcc-switches -g -Wp,-D_GLIBCXX_ASSERTION -D_FORTIFY_SOURCE=2 -pipe -fexceptions -fstack-protector-strong")
 
 func main() {
-	codecomet.Init()
+	controller.Init()
 
-	// XXX this is largely incorrect - these are GoLang platforms, not OCI
 	// XXX Geez hard coded host path dammmmmm
-	outx := build("/Users/dmp/Projects/GitHub/codecomet/isovaline", []*coretypes.Platform{
-		coretypes.LinuxArm64,
-		coretypes.LinuxAmd64,
-		coretypes.DarwinArm64,
-		coretypes.DarwinAmd64,
-	})
+	outx := fileset.Merge([]codecomet.FileSet{
+		buildBuildctl(),
+		buildGhost(),
+		buildStep(),
+		buildIsovaline("/Users/dmp/Projects/GitHub/codecomet/isovaline"),
+		buildInternal(),
+		buildNerdctl(),
+	}, &codecomet.MergeOptions{}).GetInternalState()
 
-	// output = wrapllb.Copy(upstream, "/dist/*", output, "/", &wrapllb.CopyOptions{})
 	controller.Get().Exporter = &controller.Export{
 		Local: "release/mark-I", // os.Args[2],
 		// Oci: "oci-tester/exp.tar",
@@ -46,157 +44,25 @@ func main() {
 	controller.Get().Do(outx)
 }
 
-func buildLima(loc string, plt []*coretypes.Platform) llb.State {
-	source := codecomet.From(&codecomet.Local{
-		Path: loc,
-
-		Exclude: []string{
-			"xxx",
-			"dagger",
-			"dist",
-			"tmp",
-			"tmp_raw",
-			".idea",
-		},
-	})
-
-	// source = patch.Patch(source, lima_patch, lima_sdk)
-
-	outx := []llb.State{}
-
-	for _, v := range plt {
-		outy := codecomet.From(&codecomet.Scratch{})
-		glg := golang.New(debian.Bullseye, golang2.Go1_19, true, true)
-		glg.Source = source
-		// Isovaline destination
-		glg.Env["DC_PREFIX"] = "/output"
-		// XXX not quite sure what is going on with the SDK at this point
-		// glg.Env["MACOSX_DEPLOYMENT_TARGET"] = "11.0"
-
-		// glg.Env["SYSTEM_VERSION_COMPAT"] = "1"
-
-		glg.Config.Target.GOOS = golang.GoOS(v.OS)
-		glg.Config.Target.GOARCH = golang.GoArch(v.Architecture)
-
-		glg.Do(`
-			LIMA_ROOT=/input/dependencies/lima-vm/lima
-			mkdir -p "$DC_PREFIX"/bin
-			mkdir -p "$DC_PREFIX"/share/lima/examples
-
-			#cp -a "$LIMA_ROOT"/cmd/apptainer.lima "$DC_PREFIX"/bin
-			#cp -a "$LIMA_ROOT"/cmd/docker.lima "$DC_PREFIX"/bin
-			cp -a "$LIMA_ROOT"/cmd/lima "$DC_PREFIX"/bin
-			#cp -a "$LIMA_ROOT"/cmd/lima.bat "$DC_PREFIX"/bin
-			cp -a "$LIMA_ROOT"/cmd/nerdctl.lima "$DC_PREFIX"/bin
-			#cp -a "$LIMA_ROOT"/cmd/podman.lima "$DC_PREFIX"/bin
-
-			# Link our template
-			cp /input/upstream/lima-cli/templates/codecomet-bullseye.yaml "$DC_PREFIX"/share/lima/examples
-			ln -s codecomet-buildkit-debian.yaml "$DC_PREFIX"/share/lima/examples/default.yaml
-		`)
-
-		glg.Do(`
-			LIMA_ROOT=/input/dependencies/lima-vm/lima
-			cd "$LIMA_ROOT"
-			GOOS=linux GOARCH=arm64 go build -o "$DC_PREFIX"/share/lima/lima-guestagent.Linux-aarch64 ./cmd/lima-guestagent
-			GOOS=linux GOARCH=amd64 go build -o "$DC_PREFIX"/share/lima/lima-guestagent.Linux-x86_64 ./cmd/lima-guestagent
-		`)
-
-		glg.Config.CGO.CC = "clang"
-		glg.Config.CGO.CXX = "clang++"
-		glg.Config.CGO.CGO_ENABLED = 1
-		glg.Config.CGO.GO_EXTLINK_ENABLED = 1
-
-		glg.Do(
-			`
-				LIMA_ROOT=/input/dependencies/lima-vm/lima
-				cd "$LIMA_ROOT"
-				go build -o "$DC_PREFIX"/bin/limactl ./cmd/limactl
-			`,
-		)
-
-		if glg.Config.Target.GOOS == golang.Darwin {
-			glg.Do(`
-				# XXX Very dirty right now - fix this!
-				# LD_LIBRARY_PATH=/opt/macosxcross/bin codesign -f --sign - 
-				LIMA_ROOT=/input/dependencies/lima-vm/lima
-				codesign --entitlements "$LIMA_ROOT"/vz.entitlements --sign - "$DC_PREFIX"/bin/limactl
-			`)
-		}
-
-		// fmt.Println(v, cc)
-		outx = append(outx, wrapllb.Copy(glg.Destination, "/", outy, "/"+v.OS+"/"+v.Architecture, &wrapllb.CopyOptions{}))
-	}
-
-	/*
-		CGO_ENABLED=1 $(GO_BUILD) -o bin/limactl ./cmd/limactl
-
-		GOOS=linux GOARCH=arm64 CGO_ENABLED=0 $(GO_BUILD) -o _output/share/lima/lima-guestagent.Linux-x86_64 ./cmd/lima-guestagent
-		GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO_BUILD) -o _output/share/lima/lima-guestagent.Linux-x86_64 ./cmd/lima-guestagent
-
-				cp -aL examples _output/share/lima
-				mkdir -p _output/share/doc/lima
-				cp -aL *.md LICENSE docs _output/share/doc/lima
-	*/
-	return llb.Merge(outx)
-}
-
-func build(loc string, plt []*coretypes.Platform) llb.State {
-	out := []llb.State{}
-	out = append(out, buildBuildctl())
-	out = append(out, buildGhost())
-	out = append(out, buildStep())
-	out = append(out, buildIsovaline(loc))
-	out = append(out, buildInternal())
-	out = append(out, buildNerdctl())
-	return llb.Merge(out)
-}
-
-/*
-func buildLima() llb.State {
-	version := "v0.14.2"
-	source := codecomet.From((&codecomet.Git{
-		Reference:  version,
-		KeepGitDir: true,
-	}).Parse(fmt.Sprintf("https://%s.git", "github.com/lima-vm/lima")))
-
-	lamd := buildX(source, "", []*Object{{Name: "linux/amd64/bin/codecomet.upstream.limactl", Source: "."}}, coretypes.LinuxAmd64, golang2.Go1_19)
-	larm := buildX(source, "", []*Object{{Name: "linux/arm64/bin/codecomet.internal.github-release", Source: "."}}, coretypes.LinuxArm64, golang2.Go1_19)
-	armb := buildX(source, "", []*Object{{Name: "codecomet.internal.github-release", Source: "."}}, coretypes.DarwinArm64, golang2.Go1_19)
-	amdb := buildX(source, "", []*Object{{Name: "codecomet.internal.github-release", Source: "."}}, coretypes.DarwinAmd64, golang2.Go1_19)
-	lip := lipo(armb, amdb, "")
-
-	return llb.Merge([]llb.State{
-		lamd,
-		larm,
-		lip,
-	})
-}
-*/
-
-func buildInternal() llb.State {
+func buildInternal() codecomet.FileSet {
 	version := "v0.10.0"
-	source := codecomet.From((&codecomet.Git{
+	src := (&codecomet.Git{
 		Reference:  version,
 		KeepGitDir: true,
-	}).Parse(fmt.Sprintf("https://%s.git", "github.com/github-release/github-release")))
+	}).Parse(fmt.Sprintf("https://%s.git", "github.com/github-release/github-release"))
 
-	lamd := buildX(source, "", []*Object{{Name: "linux/amd64/bin/codecomet.internal.github-release", Source: "."}}, coretypes.LinuxAmd64, golang2.Go1_19)
-	larm := buildX(source, "", []*Object{{Name: "linux/arm64/bin/codecomet.internal.github-release", Source: "."}}, coretypes.LinuxArm64, golang2.Go1_19)
-	armb := buildX(source, "", []*Object{{Name: "codecomet.internal.github-release", Source: "."}}, coretypes.DarwinArm64, golang2.Go1_19)
-	amdb := buildX(source, "", []*Object{{Name: "codecomet.internal.github-release", Source: "."}}, coretypes.DarwinAmd64, golang2.Go1_19)
+	lamd := buildX(src, "", []*Object{{Name: "linux/amd64/bin/codecomet.internal.github-release", Source: "."}}, codecomet.LinuxAmd64, golang2.Go1_19)
+	larm := buildX(src, "", []*Object{{Name: "linux/arm64/bin/codecomet.internal.github-release", Source: "."}}, codecomet.LinuxArm64, golang2.Go1_19)
+	armb := buildX(src, "", []*Object{{Name: "codecomet.internal.github-release", Source: "."}}, codecomet.DarwinArm64, golang2.Go1_19)
+	amdb := buildX(src, "", []*Object{{Name: "codecomet.internal.github-release", Source: "."}}, codecomet.DarwinAmd64, golang2.Go1_19)
 	lip := lipo(armb, amdb, "")
 
-	return llb.Merge([]llb.State{
-		lamd,
-		larm,
-		lip,
-	})
+	return fileset.Merge([]codecomet.FileSet{lamd, larm, lip}, &codecomet.MergeOptions{})
 }
 
-func buildIsovaline(loc string) llb.State {
+func buildIsovaline(loc string) codecomet.FileSet {
 	version := "mark-I"
-	source := codecomet.From(&codecomet.Local{
+	src := &codecomet.Local{
 		Path: loc,
 
 		Exclude: []string{
@@ -207,9 +73,8 @@ func buildIsovaline(loc string) llb.State {
 			"tmp_raw",
 			".idea",
 		},
-	})
-
-	lamd := buildX(source, "-X github.com/codecomet-io/isovaline/version.Version="+version, []*Object{
+	}
+	lamd := buildX(src, "-X github.com/codecomet-io/isovaline/version.Version="+version, []*Object{
 		{Name: "linux/amd64/bin/codecomet-ticker", Source: "./cmd/codecomet-ticker"},
 		{Name: "linux/amd64/bin/codecomet-mdns", Source: "./cmd/codecomet-mdns"},
 		{Name: "linux/amd64/bin/codecomet-localghost", Source: "./cmd/codecomet-localghost"},
@@ -218,8 +83,9 @@ func buildIsovaline(loc string) llb.State {
 		{Name: "linux/amd64/bin/codecomet-ott", Source: "./cmd/codecomet-ott"},
 		{Name: "linux/amd64/bin/codecomet-debugger", Source: "./cmd/codecomet-debugger"},
 		{Name: "linux/amd64/bin/codecomet-builder", Source: "./cmd/codecomet-builder"},
-	}, coretypes.LinuxAmd64, golang2.Go1_19)
-	larm := buildX(source, "-X github.com/codecomet-io/isovaline/version.Version="+version, []*Object{
+		{Name: "linux/amd64/bin/codecomet", Source: "./cmd/codecomet"},
+	}, codecomet.LinuxAmd64, golang2.Go1_19)
+	larm := buildX(src, "-X github.com/codecomet-io/isovaline/version.Version="+version, []*Object{
 		{Name: "linux/arm64/bin/codecomet-ticker", Source: "./cmd/codecomet-ticker"},
 		{Name: "linux/arm64/bin/codecomet-mdns", Source: "./cmd/codecomet-mdns"},
 		{Name: "linux/arm64/bin/codecomet-localghost", Source: "./cmd/codecomet-localghost"},
@@ -228,8 +94,9 @@ func buildIsovaline(loc string) llb.State {
 		{Name: "linux/arm64/bin/codecomet-ott", Source: "./cmd/codecomet-ott"},
 		{Name: "linux/arm64/bin/codecomet-debugger", Source: "./cmd/codecomet-debugger"},
 		{Name: "linux/arm64/bin/codecomet-builder", Source: "./cmd/codecomet-builder"},
-	}, coretypes.LinuxArm64, golang2.Go1_19)
-	armb := buildX(source, "-X github.com/codecomet-io/isovaline/version.Version="+version, []*Object{
+		{Name: "linux/arm64/bin/codecomet", Source: "./cmd/codecomet"},
+	}, codecomet.LinuxArm64, golang2.Go1_19)
+	armb := buildX(src, "-X github.com/codecomet-io/isovaline/version.Version="+version, []*Object{
 		{Name: "codecomet-ticker", Source: "./cmd/codecomet-ticker"},
 		{Name: "codecomet-mdns", Source: "./cmd/codecomet-mdns"},
 		{Name: "codecomet-localghost", Source: "./cmd/codecomet-localghost"},
@@ -238,8 +105,9 @@ func buildIsovaline(loc string) llb.State {
 		{Name: "codecomet-ott", Source: "./cmd/codecomet-ott"},
 		{Name: "codecomet-debugger", Source: "./cmd/codecomet-debugger"},
 		{Name: "codecomet-builder", Source: "./cmd/codecomet-builder"},
-	}, coretypes.DarwinArm64, golang2.Go1_19)
-	amdb := buildX(source, "-X github.com/codecomet-io/isovaline/version.Version="+version, []*Object{
+		{Name: "codecomet", Source: "./cmd/codecomet"},
+	}, codecomet.DarwinArm64, golang2.Go1_19)
+	amdb := buildX(src, "-X github.com/codecomet-io/isovaline/version.Version="+version, []*Object{
 		{Name: "codecomet-ticker", Source: "./cmd/codecomet-ticker"},
 		{Name: "codecomet-mdns", Source: "./cmd/codecomet-mdns"},
 		{Name: "codecomet-localghost", Source: "./cmd/codecomet-localghost"},
@@ -248,94 +116,75 @@ func buildIsovaline(loc string) llb.State {
 		{Name: "codecomet-ott", Source: "./cmd/codecomet-ott"},
 		{Name: "codecomet-debugger", Source: "./cmd/codecomet-debugger"},
 		{Name: "codecomet-builder", Source: "./cmd/codecomet-builder"},
-	}, coretypes.DarwinAmd64, golang2.Go1_19)
+		{Name: "codecomet", Source: "./cmd/codecomet"},
+	}, codecomet.DarwinAmd64, golang2.Go1_19)
 	lip := lipo(armb, amdb, "")
 
-	return llb.Merge([]llb.State{
-		lamd,
-		larm,
-		lip,
-	})
+	return fileset.Merge([]codecomet.FileSet{lamd, larm, lip}, &codecomet.MergeOptions{})
 }
 
-func buildStep() llb.State {
+func buildStep() codecomet.FileSet {
 	version := "v0.23.2"
-	source := codecomet.From((&codecomet.Git{
+	src := (&codecomet.Git{
 		Reference:  version,
 		KeepGitDir: true,
-	}).Parse(fmt.Sprintf("https://%s.git", "github.com/smallstep/cli")))
+	}).Parse(fmt.Sprintf("https://%s.git", "github.com/smallstep/cli"))
 
-	lamd := buildX(source, "-X main.Version=v0.23.2 -X \\\"main.BuildTime=$(date -u '+%Y-%m-%d %H:%M UTC')\\\"", []*Object{{Name: "linux/amd64/bin/codecomet.upstream.step", Source: "./cmd/step"}}, coretypes.LinuxAmd64, golang2.Go1_19)
-	larm := buildX(source, "-X main.Version=v0.23.2 -X \\\"main.BuildTime=$(date -u '+%Y-%m-%d %H:%M UTC')\\\"", []*Object{{Name: "linux/arm64/bin/codecomet.upstream.step", Source: "/cmd/step"}}, coretypes.LinuxArm64, golang2.Go1_19)
-	armb := buildX(source, "-X main.Version=v0.23.2 -X \\\"main.BuildTime=$(date -u '+%Y-%m-%d %H:%M UTC')\\\"", []*Object{{Name: "codecomet.upstream.step", Source: "/cmd/step"}}, coretypes.DarwinArm64, golang2.Go1_19)
-	amdb := buildX(source, "-X main.Version=v0.23.2 -X \\\"main.BuildTime=$(date -u '+%Y-%m-%d %H:%M UTC')\\\"", []*Object{{Name: "codecomet.upstream.step", Source: "/cmd/step"}}, coretypes.DarwinAmd64, golang2.Go1_19)
+	lamd := buildX(src, "-X main.Version=v0.23.2 -X \\\"main.BuildTime=$(date -u '+%Y-%m-%d %H:%M UTC')\\\"", []*Object{{Name: "linux/amd64/bin/codecomet.upstream.step", Source: "./cmd/step"}}, codecomet.LinuxAmd64, golang2.Go1_19)
+	larm := buildX(src, "-X main.Version=v0.23.2 -X \\\"main.BuildTime=$(date -u '+%Y-%m-%d %H:%M UTC')\\\"", []*Object{{Name: "linux/arm64/bin/codecomet.upstream.step", Source: "/cmd/step"}}, codecomet.LinuxArm64, golang2.Go1_19)
+	armb := buildX(src, "-X main.Version=v0.23.2 -X \\\"main.BuildTime=$(date -u '+%Y-%m-%d %H:%M UTC')\\\"", []*Object{{Name: "codecomet.upstream.step", Source: "/cmd/step"}}, codecomet.DarwinArm64, golang2.Go1_19)
+	amdb := buildX(src, "-X main.Version=v0.23.2 -X \\\"main.BuildTime=$(date -u '+%Y-%m-%d %H:%M UTC')\\\"", []*Object{{Name: "codecomet.upstream.step", Source: "/cmd/step"}}, codecomet.DarwinAmd64, golang2.Go1_19)
 	lip := lipo(armb, amdb, "")
 
-	return llb.Merge([]llb.State{
-		lamd,
-		larm,
-		lip,
-	})
+	return fileset.Merge([]codecomet.FileSet{lamd, larm, lip}, &codecomet.MergeOptions{})
 }
 
-func buildGhost() llb.State {
+func buildGhost() codecomet.FileSet {
 	version := "v1.7.1"
-	source := codecomet.From((&codecomet.Git{
+	src := (&codecomet.Git{
 		Reference:  version,
 		KeepGitDir: true,
-	}).Parse(fmt.Sprintf("https://%s.git", "github.com/ghostunnel/ghostunnel")))
+	}).Parse(fmt.Sprintf("https://%s.git", "github.com/ghostunnel/ghostunnel"))
 
-	lamd := buildX(source, "-X main.version="+version, []*Object{{Name: "linux/amd64/bin/codecomet.upstream.ghostunnel", Source: "."}}, coretypes.LinuxAmd64, golang2.Go1_19)
-	larm := buildX(source, "-X main.version="+version, []*Object{{Name: "linux/arm64/bin/codecomet.upstream.ghostunnel", Source: "."}}, coretypes.LinuxArm64, golang2.Go1_19)
-	armb := buildX(source, "-X main.version="+version, []*Object{{Name: "codecomet.upstream.ghostunnel", Source: "."}}, coretypes.DarwinArm64, golang2.Go1_19)
-	amdb := buildX(source, "-X main.version="+version, []*Object{{Name: "codecomet.upstream.ghostunnel", Source: "."}}, coretypes.DarwinAmd64, golang2.Go1_19)
+	lamd := buildX(src, "-X main.version="+version, []*Object{{Name: "linux/amd64/bin/codecomet.upstream.ghostunnel", Source: "."}}, codecomet.LinuxAmd64, golang2.Go1_19)
+	larm := buildX(src, "-X main.version="+version, []*Object{{Name: "linux/arm64/bin/codecomet.upstream.ghostunnel", Source: "."}}, codecomet.LinuxArm64, golang2.Go1_19)
+	armb := buildX(src, "-X main.version="+version, []*Object{{Name: "codecomet.upstream.ghostunnel", Source: "."}}, codecomet.DarwinArm64, golang2.Go1_19)
+	amdb := buildX(src, "-X main.version="+version, []*Object{{Name: "codecomet.upstream.ghostunnel", Source: "."}}, codecomet.DarwinAmd64, golang2.Go1_19)
 	lip := lipo(armb, amdb, "")
 
-	return llb.Merge([]llb.State{
-		lamd,
-		larm,
-		lip,
-	})
+	return fileset.Merge([]codecomet.FileSet{lamd, larm, lip}, &codecomet.MergeOptions{})
 }
 
-func buildBuildctl() llb.State {
+func buildBuildctl() codecomet.FileSet {
 	version := "v0.11.2"
-	source := codecomet.From((&codecomet.Git{
+	src := (&codecomet.Git{
 		Reference:  version,
 		KeepGitDir: true,
-	}).Parse(fmt.Sprintf("https://%s.git", "github.com/moby/buildkit")))
+	}).Parse(fmt.Sprintf("https://%s.git", "github.com/moby/buildkit"))
 
-	lamd := buildX(source, "-X github.com/moby/buildkit/version.Version=v0.11.2 -X github.com/moby/buildkit/version.Package=github.com/moby/buildkit", []*Object{{Name: "linux/amd64/bin/codecomet.upstream.buildctl", Source: "./cmd/buildctl"}}, coretypes.LinuxAmd64, golang2.Go1_19)
-	larm := buildX(source, "-X github.com/moby/buildkit/version.Version=v0.11.2 -X github.com/moby/buildkit/version.Package=github.com/moby/buildkit", []*Object{{Name: "linux/arm64/bin/codecomet.upstream.buildctl", Source: "./cmd/buildctl"}}, coretypes.LinuxArm64, golang2.Go1_19)
-	armb := buildX(source, "-X github.com/moby/buildkit/version.Version=v0.11.2 -X github.com/moby/buildkit/version.Package=github.com/moby/buildkit", []*Object{{Name: "codecomet.upstream.buildctl", Source: "./cmd/buildctl"}}, coretypes.DarwinArm64, golang2.Go1_19)
-	amdb := buildX(source, "-X github.com/moby/buildkit/version.Version=v0.11.2 -X github.com/moby/buildkit/version.Package=github.com/moby/buildkit", []*Object{{Name: "codecomet.upstream.buildctl", Source: "./cmd/buildctl"}}, coretypes.DarwinAmd64, golang2.Go1_19)
+	lamd := buildX(src, "-X github.com/moby/buildkit/version.Version=v0.11.2 -X github.com/moby/buildkit/version.Package=github.com/moby/buildkit", []*Object{{Name: "linux/amd64/bin/codecomet.upstream.buildctl", Source: "./cmd/buildctl"}}, codecomet.LinuxAmd64, golang2.Go1_19)
+	larm := buildX(src, "-X github.com/moby/buildkit/version.Version=v0.11.2 -X github.com/moby/buildkit/version.Package=github.com/moby/buildkit", []*Object{{Name: "linux/arm64/bin/codecomet.upstream.buildctl", Source: "./cmd/buildctl"}}, codecomet.LinuxArm64, golang2.Go1_19)
+	armb := buildX(src, "-X github.com/moby/buildkit/version.Version=v0.11.2 -X github.com/moby/buildkit/version.Package=github.com/moby/buildkit", []*Object{{Name: "codecomet.upstream.buildctl", Source: "./cmd/buildctl"}}, codecomet.DarwinArm64, golang2.Go1_19)
+	amdb := buildX(src, "-X github.com/moby/buildkit/version.Version=v0.11.2 -X github.com/moby/buildkit/version.Package=github.com/moby/buildkit", []*Object{{Name: "codecomet.upstream.buildctl", Source: "./cmd/buildctl"}}, codecomet.DarwinAmd64, golang2.Go1_19)
 	lip := lipo(armb, amdb, "")
 
-	return llb.Merge([]llb.State{
-		lamd,
-		larm,
-		lip,
-	})
+	return fileset.Merge([]codecomet.FileSet{lamd, larm, lip}, &codecomet.MergeOptions{})
 }
 
-func buildNerdctl() llb.State {
+func buildNerdctl() codecomet.FileSet {
 	version := "v1.2.0"
-	source := codecomet.From((&codecomet.Git{
+	src := (&codecomet.Git{
 		Reference:  version,
 		KeepGitDir: true,
-	}).Parse(fmt.Sprintf("https://%s.git", "github.com/containerd/nerdctl")))
+	}).Parse(fmt.Sprintf("https://%s.git", "github.com/containerd/nerdctl"))
 
-	lamd := buildX(source, "-X github.com/containerd/nerdctl/pkg/version.Version="+version, []*Object{{Name: "linux/amd64/bin/codecomet.upstream.nerdctl", Source: "./cmd/nerdctl"}}, coretypes.LinuxAmd64, golang2.Go1_19)
-	larm := buildX(source, "-X github.com/containerd/nerdctl/pkg/version.Version="+version, []*Object{{Name: "linux/arm64/bin/codecomet.upstream.nerdctl", Source: "./cmd/nerdctl"}}, coretypes.LinuxArm64, golang2.Go1_19)
-	// armb := buildX(source, "-X github.com/containerd/nerdctl/pkg/version.Version="+version, []*Object{{Name: "codecomet.upstream.nerdctl", Source: "./cmd/nerdctl"}}, coretypes.DarwinArm64, golang2.Go1_19)
-	// amdb := buildX(source, "-X github.com/containerd/nerdctl/pkg/version.Version="+version, []*Object{{Name: "codecomet.upstream.nerdctl", Source: "./cmd/nerdctl"}}, coretypes.DarwinAmd64, golang2.Go1_19)
+	lamd := buildX(src, "-X github.com/containerd/nerdctl/pkg/version.Version="+version, []*Object{{Name: "linux/amd64/bin/codecomet.upstream.nerdctl", Source: "./cmd/nerdctl"}}, codecomet.LinuxAmd64, golang2.Go1_19)
+	larm := buildX(src, "-X github.com/containerd/nerdctl/pkg/version.Version="+version, []*Object{{Name: "linux/arm64/bin/codecomet.upstream.nerdctl", Source: "./cmd/nerdctl"}}, codecomet.LinuxArm64, golang2.Go1_19)
+	// armb := buildX(source, "-X github.com/containerd/nerdctl/pkg/version.Version="+version, []*Object{{Name: "codecomet.upstream.nerdctl", Source: "./cmd/nerdctl"}}, codecomet.DarwinArm64, golang2.Go1_19)
+	// amdb := buildX(source, "-X github.com/containerd/nerdctl/pkg/version.Version="+version, []*Object{{Name: "codecomet.upstream.nerdctl", Source: "./cmd/nerdctl"}}, codecomet.DarwinAmd64, golang2.Go1_19)
 	// lip := lipo(armb, amdb, "")
 
-	return llb.Merge([]llb.State{
-		lamd,
-		larm,
-		// lip,
-	})
+	return fileset.Merge([]codecomet.FileSet{lamd, larm}, &codecomet.MergeOptions{})
 }
 
 type Object struct {
@@ -346,20 +195,20 @@ type Object struct {
 	Name    string
 }
 
-func lipo(armbuild llb.State, amdbuild llb.State, entitlements string) llb.State {
+func lipo(armbuild codecomet.FileSet, amdbuild codecomet.FileSet, entitlements string) codecomet.FileSet {
 	// Need lipo - could be a different image?
-	bsh := bash.New(base.C(debian.Bullseye, llvm.V15, true, coretypes.DefaultPlatform))
+	bsh := bash.New(root.C(debian.Bullseye, llvm.V15, true, codecomet.DefaultPlatform).GetInternalState())
 	bsh.ReadOnly = true
-	bsh.Mount["/armbuild"] = &wrapllb.State{
-		Source:   armbuild,
+	bsh.Mount["/armbuild"] = &wrap.State{
+		Source:   armbuild.GetInternalState(),
 		ReadOnly: true,
 	}
-	bsh.Mount["/amdbuild"] = &wrapllb.State{
-		Source:   amdbuild,
+	bsh.Mount["/amdbuild"] = &wrap.State{
+		Source:   amdbuild.GetInternalState(),
 		ReadOnly: true,
 	}
-	bsh.Mount["/output"] = &wrapllb.State{
-		Source: codecomet.From(&codecomet.Scratch{}),
+	bsh.Mount["/output"] = &wrap.State{
+		Source: fileset.New().GetInternalState(),
 	}
 	bsh.Env["entitlements"] = entitlements
 
@@ -377,16 +226,19 @@ func lipo(armbuild llb.State, amdbuild llb.State, entitlements string) llb.State
 			PATH=/opt/macosxcross/bin:$PATH LD_LIBRARY_PATH=/opt/macosxcross/bin codesign "${args[@]}" --sign - /output/darwin/universal/bin/$(basename "$i")
 		done
 `)
-	return bsh.Mount["/output"].Source
+	scr := fileset.New()
+	scr.Adopt(bsh.Mount["/output"].Source)
+	return scr
 }
 
-func buildX(source llb.State, verpoint string, targets []*Object, plt *coretypes.Platform, golangVersion golang2.Version, patches ...string) llb.State {
+func buildX(src codecomet.FileSet, verpoint string, targets []*Object, plt *codecomet.Platform, golangVersion golang2.Version, patches ...string) codecomet.FileSet {
 	if len(patches) > 0 {
-		source = patch.Patch(source, patches...)
+		src.Patch(patches, &codecomet.PatchOptions{})
+		// src.Adopt(patch.Patch(src.GetInternalState(), patches...))
 	}
 
 	glg := golang.New(debian.Bullseye, golangVersion, true, true)
-	glg.Source = source
+	glg.Source = src.GetInternalState()
 
 	glg.Env["RELEASE"] = "true"
 
@@ -424,5 +276,9 @@ func buildX(source llb.State, verpoint string, targets []*Object, plt *coretypes
 			go build -o /output/$output -tags "cgo netcgo osusergo" -gcflags "$gcflags" -ldflags "$ldflags %s" $recheat/%q
 `, v.Name, verpoint, v.Source)
 	}
-	return glg.Do(command)
+
+	res := glg.Do(command)
+	scr := fileset.New()
+	scr.Adopt(res)
+	return scr
 }
