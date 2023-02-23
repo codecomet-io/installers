@@ -2,14 +2,13 @@ package main
 
 import (
 	"fmt"
-	"github.com/codecomet-io/go-sdk/base/debian"
-	"github.com/codecomet-io/go-sdk/base/llvm"
-	"github.com/codecomet-io/go-sdk/base/node"
 	"github.com/codecomet-io/go-sdk/codecomet"
 	"github.com/codecomet-io/go-sdk/codecomet/core"
 	"github.com/codecomet-io/go-sdk/controller"
-	"github.com/codecomet-io/go-sdk/root"
-	"github.com/moby/buildkit/client/llb"
+	"github.com/codecomet-io/go-sdk/execcontext/debian"
+	"github.com/codecomet-io/go-sdk/overlay/c"
+	"github.com/codecomet-io/go-sdk/overlay/llvm"
+	"github.com/codecomet-io/go-sdk/overlay/node"
 )
 
 var (
@@ -95,24 +94,28 @@ func main() {
 func build(nodeVersion node.Version, nodeChecksum core.Digest, debianVersion debian.Version, llvmVersion llvm.Version, withC bool, plt *codecomet.Platform) {
 	controller.Init()
 
-	c := ""
-
-	var bb llb.State
-	bb = root.Debian(debianVersion, plt).GetInternalState()
-	if withC {
-		c = "-c"
-		bb = root.C(debianVersion, llvmVersion, false, plt).GetInternalState()
+	deb := &debian.Debian{
+		Version:  debianVersion,
+		Platform: plt,
 	}
 
-	outx := node.Overlay(fileset.New().Adopt(bb), nodeVersion, nodeChecksum, plt).GetInternalState()
+	// If we want C, use the c resolver
+	cTag := ""
+	if withC {
+		cTag = "-c"
+		// Alternatively, use the resolver to get the pre-built image?
+		// deb.Resolver = overlay.WithC(llvmVersion, false)
+		c.Overlay(deb, codecomet.DefaultPlatformSet)
+		llvm.Overlay(deb, llvmVersion)
+	}
 
-	tag := fmt.Sprintf("%s-%s%s-%s", debianVersion, nodeVersion, c, plt.Architecture+plt.Variant)
+	node.Overlay(deb, nodeVersion, nodeChecksum, plt)
 
 	controller.Get().Exporter = &controller.Export{
 		Images: []string{
-			"docker.io/codecometio/builder_node:" + tag,
+			"docker.io/codecometio/builder_node:" + fmt.Sprintf("%s-%s%s-%s", debianVersion, nodeVersion, cTag, plt.Architecture+plt.Variant),
 		},
 	}
 
-	controller.Get().Do(outx)
+	controller.Get().Do(deb.GetInternalState())
 }

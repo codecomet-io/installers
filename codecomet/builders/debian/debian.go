@@ -2,10 +2,9 @@ package main
 
 import (
 	"fmt"
-	"github.com/codecomet-io/go-sdk/base/debian"
-	"github.com/codecomet-io/go-sdk/bin/apt"
 	"github.com/codecomet-io/go-sdk/codecomet"
 	"github.com/codecomet-io/go-sdk/controller"
+	"github.com/codecomet-io/go-sdk/execcontext/debian"
 )
 
 const (
@@ -38,19 +37,23 @@ func main() {
 func build(debianVersion debian.Version, plt *codecomet.Platform) {
 	controller.Init()
 
-	deb := (&codecomet.Image{
-		Registry: "docker.io",
-		Owner:    "library",
-		Name:     "debian",
-		Tag:      string(debianVersion) + "-slim",
+	// Get the official image here, so, custom resolver for Debian
+	deb := debian.Debian{
+		Version:  debian.Bullseye,
 		Platform: plt,
-	})
 
-	ap := apt.New(deb.GetInternalState())
-	// add eatmydata to speed things up and socat to ease debugging out (XXX should not be in runtime images though...)
-	ap.Install("eatmydata", "socat", "nano")
+		Resolver: func(img *codecomet.Image, version debian.Version) {
+			img.Registry = "docker.io"
+			img.Owner = "library"
+			img.Name = "debian"
+			img.Tag = string(version) + "-slim"
+		},
+	}
 
-	outx := ap.State
+	// add eatmydata to speed things up and socat + nano to ease debugging out (XXX should not be in runtime images though...)
+	deb.Apt().Install("eatmydata", "socat", "nano")
+
+	outx := deb.GetInternalState()
 
 	controller.Get().Exporter = &controller.Export{
 		// Oci: "oci-tester/exp.tar",

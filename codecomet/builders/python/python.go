@@ -2,12 +2,11 @@ package main
 
 import (
 	"fmt"
-	"github.com/codecomet-io/go-sdk/base/debian"
-	"github.com/codecomet-io/go-sdk/base/llvm"
-	"github.com/codecomet-io/go-sdk/bin/apt"
 	"github.com/codecomet-io/go-sdk/codecomet"
 	"github.com/codecomet-io/go-sdk/controller"
-	"github.com/codecomet-io/go-sdk/root"
+	"github.com/codecomet-io/go-sdk/execcontext/debian"
+	"github.com/codecomet-io/go-sdk/overlay/c"
+	"github.com/codecomet-io/go-sdk/overlay/llvm"
 )
 
 var (
@@ -43,24 +42,29 @@ func main() {
 func build(debianVersion debian.Version, llvmVersion llvm.Version, withC bool, plt *codecomet.Platform) {
 	controller.Init()
 
-	c := ""
-	bb := root.Debian(debianVersion, plt)
-	if withC {
-		c = "-c"
-		bb = root.C(debianVersion, llvmVersion, false, plt)
+	deb := &debian.Debian{
+		Version:  debianVersion,
+		Platform: plt,
 	}
 
-	ag := apt.New(bb.GetInternalState())
-	ag.Install("python3", "python3-pip", "python3-venv")
-	outx := ag.State
+	// If we want C, use the c resolver
+	cTag := ""
+	if withC {
+		cTag = "-c"
+		// Alternatively, use the resolver to get the pre-built image?
+		// deb.Resolver = overlay.WithC(llvmVersion, false)
+		c.Overlay(deb, codecomet.DefaultPlatformSet)
+		llvm.Overlay(deb, llvmVersion)
+	}
 
-	tag := fmt.Sprintf("%s%s-%s", debianVersion, c, plt.Architecture+plt.Variant)
+	ag := deb.Apt()
+	ag.Install("python3", "python3-pip", "python3-venv")
 
 	controller.Get().Exporter = &controller.Export{
 		Images: []string{
-			"docker.io/codecometio/builder_python:" + tag,
+			"docker.io/codecometio/builder_python:" + fmt.Sprintf("%s%s-%s", debianVersion, cTag, plt.Architecture+plt.Variant),
 		},
 	}
 
-	controller.Get().Do(outx)
+	controller.Get().Do(deb.GetInternalState())
 }

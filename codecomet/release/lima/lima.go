@@ -3,12 +3,12 @@ package main
 import (
 	_ "embed"
 	"fmt"
-	"github.com/codecomet-io/go-sdk/base/debian"
 	golang2 "github.com/codecomet-io/go-sdk/base/golang"
 	"github.com/codecomet-io/go-sdk/bin/golang"
 	"github.com/codecomet-io/go-sdk/codecomet"
 	"github.com/codecomet-io/go-sdk/codecomet/wrap"
 	"github.com/codecomet-io/go-sdk/controller"
+	"github.com/codecomet-io/go-sdk/execcontext/debian"
 	"github.com/codecomet-io/go-sdk/fileset"
 	"github.com/moby/buildkit/client/llb"
 )
@@ -42,10 +42,10 @@ func buildone(src codecomet.FileSet, repo string, version string, entitlements s
 	ent := fileset.File("entitlements.plist", []byte(entitlements), 0400)
 
 	destination := fileset.New()
-	destination.MkDir("/bin", &codecomet.MkdirOptions{
+	destination.MkDir("/bin", &codecomet.MkDirOptions{
 		Mode: 0700,
 	})
-	destination.MkDir("/share/codecomet/examples", &codecomet.MkdirOptions{
+	destination.MkDir("/share/codecomet/examples", &codecomet.MkDirOptions{
 		Mode: 0700,
 	})
 	destination.AddFile("/share/codecomet/examples/codecomet-bullseye.yaml", []byte(vmtpl), &codecomet.AddFileOptions{
@@ -76,12 +76,12 @@ func buildone(src codecomet.FileSet, repo string, version string, entitlements s
 	glg.Config.Target.GOARCH = golang.Amd64
 
 	glg.Do(`
-		go build -ldflags="-s -w -X "$PACKAGE"/pkg/version.Version=$VERSION" -o "$DESTINATION"/share/codecomet/guestagent.Linux-x86_64 ./cmd/lima-guestagent
+		go build -ldflags="-s -w -X "$PACKAGE"/pkg/version.Version=$VERSION" -o "$DESTINATION"/share/codecomet/lima-guestagent.Linux-x86_64 ./cmd/lima-guestagent
 	`)
 
 	glg.Config.Target.GOARCH = golang.Arm64
 	glg.Do(`
-		go build -ldflags="-s -w -X "$PACKAGE"/pkg/version.Version=$VERSION" -o "$DESTINATION"/share/codecomet/guestagent.Linux-aarch64 ./cmd/lima-guestagent
+		go build -ldflags="-s -w -X "$PACKAGE"/pkg/version.Version=$VERSION" -o "$DESTINATION"/share/codecomet/lima-guestagent.Linux-aarch64 ./cmd/lima-guestagent
 	`)
 
 	// Now, lima needs CGO is required for the build

@@ -2,16 +2,13 @@ package main
 
 import (
 	"fmt"
-	"github.com/codecomet-io/go-sdk/base/debian"
-	"github.com/codecomet-io/go-sdk/base/golang"
-	"github.com/codecomet-io/go-sdk/base/llvm"
-	"github.com/codecomet-io/go-sdk/base/vcs"
 	"github.com/codecomet-io/go-sdk/codecomet"
 	"github.com/codecomet-io/go-sdk/codecomet/core"
 	"github.com/codecomet-io/go-sdk/controller"
-	"github.com/codecomet-io/go-sdk/fileset"
-	"github.com/codecomet-io/go-sdk/root"
-	"github.com/moby/buildkit/client/llb"
+	"github.com/codecomet-io/go-sdk/execcontext/debian"
+	"github.com/codecomet-io/go-sdk/overlay"
+	"github.com/codecomet-io/go-sdk/overlay/golang"
+	"github.com/codecomet-io/go-sdk/overlay/llvm"
 )
 
 var (
@@ -121,31 +118,32 @@ func build(goVersion golang.Version, goChecksum core.Digest, debianVersion debia
 	cgo := ""
 	mac := ""
 
-	var bb llb.State
-	bb = root.Debian(debianVersion, plt).GetInternalState()
+	// Get a basic debian image
+	deb := &debian.Debian{
+		Version:  debian.Bullseye,
+		Platform: plt,
+	}
+	// Or a C-enabled one, possibly with MacOS support
 	if withCGO {
 		cgo = "-cgo"
-		bb = root.C(debianVersion, llvmVersion, withMacOS, plt).GetInternalState()
+		deb.Resolver = overlay.WithC(llvmVersion, withMacOS)
 	}
 	if withMacOS {
 		mac = "-macos"
 	}
-	bb = vcs.Add(bb)
+	// Add git and mercurial regardless
+	deb.Apt().Install("git", "mercurial")
 
-	outx := fileset.Merge([]codecomet.FileSet{
-		fileset.New().Adopt(bb),
-		fileset.New().Adopt(golang.Add(goVersion, goChecksum, plt)),
-	}, &codecomet.MergeOptions{}).GetInternalState()
-
-	tag := fmt.Sprintf("%s-%s%s%s-%s", debianVersion, goVersion, cgo, mac, plt.Architecture+plt.Variant)
+	// Now, overlay go in the base image
+	golang.Overlay(deb, goVersion, goChecksum, plt)
 
 	controller.Get().Exporter = &controller.Export{
 		Images: []string{
-			"docker.io/codecometio/builder_golang:" + tag,
+			"docker.io/codecometio/builder_golang:" + fmt.Sprintf("%s-%s%s%s-%s", debianVersion, goVersion, cgo, mac, plt.Architecture+plt.Variant),
 		},
 	}
 
-	controller.Get().Do(outx)
+	controller.Get().Do(deb.GetInternalState())
 }
 
 // osxbuilda.WithImageConfig()

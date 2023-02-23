@@ -3,14 +3,13 @@ package main
 import (
 	_ "embed"
 	"fmt"
-	"github.com/codecomet-io/go-sdk/base/debian"
 	golang2 "github.com/codecomet-io/go-sdk/base/golang"
 	"github.com/codecomet-io/go-sdk/base/llvm"
 	"github.com/codecomet-io/go-sdk/bin/bash"
 	"github.com/codecomet-io/go-sdk/bin/golang"
 	"github.com/codecomet-io/go-sdk/codecomet"
-	"github.com/codecomet-io/go-sdk/codecomet/wrap"
 	"github.com/codecomet-io/go-sdk/controller"
+	"github.com/codecomet-io/go-sdk/execcontext/debian"
 	"github.com/codecomet-io/go-sdk/fileset"
 	"github.com/codecomet-io/go-sdk/root"
 )
@@ -198,28 +197,38 @@ type Object struct {
 func lipo(armbuild codecomet.FileSet, amdbuild codecomet.FileSet, entitlements string) codecomet.FileSet {
 	// Need lipo - could be a different image?
 	bsh := bash.New(root.C(debian.Bullseye, llvm.V15, true, codecomet.DefaultPlatform).GetInternalState())
-	bsh.ReadOnly = true
-	bsh.Mount["/armbuild"] = &wrap.State{
-		Source:   armbuild.GetInternalState(),
-		ReadOnly: true,
-	}
-	bsh.Mount["/amdbuild"] = &wrap.State{
-		Source:   amdbuild.GetInternalState(),
-		ReadOnly: true,
-	}
-	bsh.Mount["/output"] = &wrap.State{
-		Source: fileset.New().GetInternalState(),
-	}
+
+	input := fileset.New()
+	fileset.Copy(armbuild, "/", input, "/armbuild/", &codecomet.CopyOptions{})
+	fileset.Copy(amdbuild, "/", input, "/amdbuild/", &codecomet.CopyOptions{})
+	input.AddFile("entitlements.plist", []byte(entitlements), &codecomet.AddFileOptions{})
+
+	// bsh.GetPipe().Mount(armbuild, "/armbuild", &codecomet.MountOptions{})
+	// bsh.GetPipe().Mount(amdbuild, "/amdbuild", &codecomet.MountOptions{})
+	/*
+			bsh.Mount["/armbuild"] = &wrap.State{
+				Source:   armbuild.GetInternalState(),
+				ReadOnly: true,
+			}
+			bsh.Mount["/amdbuild"] = &wrap.State{
+				Source:   amdbuild.GetInternalState(),
+				ReadOnly: true,
+			}
+
+		bsh.Mount["/output"] = &wrap.State{
+			Source: fileset.New().GetInternalState(),
+		}
+	*/
 	bsh.Env["entitlements"] = entitlements
 
-	bsh.Run("LIPO", `
+	bsh.RunOLD("LIPO", `
 		args=("-f")
 		[ "$entitlements" != "" ] || {
 			echo "$entitlements" > entitlements.plist
 			args+=(--entitlements entitlements.plist)
 		}
 
-		mkdir -p /output/darwin/universal/bin
+		mkdir -p /codecomet/output/darwin/universal/bin
 		for i in /armbuild/*; do
 			/opt/macosxcross/bin/lipo -create -output /output/darwin/universal/bin/$(basename "$i") /armbuild/$(basename "$i") /amdbuild/$(basename "$i")
 			# Resign?
